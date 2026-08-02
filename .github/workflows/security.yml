@@ -173,3 +173,59 @@ jobs:
           severity: MEDIUM,HIGH,CRITICAL
           exit-code: "1"
           cache-dir: ~/.cache/trivy
+
+  config:
+    if: github.repository == 'fardani235/molecule'
+    name: config (trivy misconfig)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache Trivy DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-
+
+      # Report pass: all severities, SARIF, never fails.
+      - name: Trivy config (report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-config-report.sarif
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+          cache-dir: ~/.cache/trivy
+
+      - name: Upload Trivy config SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-config-report.sarif
+          category: trivy-config
+
+      - name: Upload Trivy config report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-config-report
+          path: trivy-config-report.sarif
+          retention-days: 30
+
+      # Gate pass: fail on medium+.
+      - name: Trivy config (gate)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          severity: MEDIUM,HIGH,CRITICAL
+          exit-code: "1"
+          cache-dir: ~/.cache/trivy
