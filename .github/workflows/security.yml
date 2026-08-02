@@ -128,29 +128,40 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    env:
+      TRIVY_VERSION: "0.65.0"
+      # Authenticated DB/metadata pulls avoid anonymous rate limits on forks.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache
     steps:
       - uses: actions/checkout@v7
 
       - name: Cache Trivy DB
         uses: actions/cache@v4
         with:
-          path: ~/.cache/trivy
+          path: ${{ github.workspace }}/.trivycache
           key: trivy-db-${{ github.run_id }}
           restore-keys: |
             trivy-db-
 
-      # Report pass: all severities, SARIF, never fails.
+      # Install the Trivy CLI directly (the trivy-action wrapper bundles a
+      # broken setup-trivy transitive dep and an unauthenticated installer that
+      # hits GitHub rate limits on forks). The CLI gives full control.
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          curl -sSL "https://raw.githubusercontent.com/aquasecurity/trivy/v${TRIVY_VERSION}/contrib/install.sh" \
+            | sudo sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
+          trivy --version
+
+      # Report pass: all severities, SARIF, never fails the job.
       - name: Trivy SCA (report)
-        uses: aquasecurity/trivy-action@v0.33.0
-        with:
-          scan-type: fs
-          scanners: vuln
-          scan-ref: .
-          format: sarif
-          output: trivy-sca-report.sarif
-          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
-          exit-code: "0"
-          cache-dir: ~/.cache/trivy
+        continue-on-error: true
+        run: |
+          trivy fs --scanners vuln --format sarif \
+            --output trivy-sca-report.sarif \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 . || true
 
       # Guarantee the SARIF file exists even if trivy errored before writing.
       - name: Ensure Trivy SCA SARIF exists
@@ -177,15 +188,10 @@ jobs:
 
       # Gate pass: fail on medium+.
       - name: Trivy SCA (gate)
-        uses: aquasecurity/trivy-action@v0.33.0
-        with:
-          scan-type: fs
-          scanners: vuln
-          scan-ref: .
-          format: table
-          severity: MEDIUM,HIGH,CRITICAL
-          exit-code: "1"
-          cache-dir: ~/.cache/trivy
+        run: |
+          trivy fs --scanners vuln --format table \
+            --severity MEDIUM,HIGH,CRITICAL \
+            --exit-code 1 .
 
   config:
     if: github.repository == 'fardani235/molecule'
@@ -194,28 +200,37 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    env:
+      TRIVY_VERSION: "0.65.0"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache
     steps:
       - uses: actions/checkout@v7
 
       - name: Cache Trivy DB
         uses: actions/cache@v4
         with:
-          path: ~/.cache/trivy
+          path: ${{ github.workspace }}/.trivycache
           key: trivy-db-${{ github.run_id }}
           restore-keys: |
             trivy-db-
 
-      # Report pass: all severities, SARIF, never fails.
+      # Install the Trivy CLI directly (see the sca job for rationale).
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          curl -sSL "https://raw.githubusercontent.com/aquasecurity/trivy/v${TRIVY_VERSION}/contrib/install.sh" \
+            | sudo sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
+          trivy --version
+
+      # Report pass: all severities, SARIF, never fails the job.
       - name: Trivy config (report)
-        uses: aquasecurity/trivy-action@v0.33.0
-        with:
-          scan-type: config
-          scan-ref: .
-          format: sarif
-          output: trivy-config-report.sarif
-          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
-          exit-code: "0"
-          cache-dir: ~/.cache/trivy
+        continue-on-error: true
+        run: |
+          trivy config --format sarif \
+            --output trivy-config-report.sarif \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 . || true
 
       # Guarantee the SARIF file exists even if trivy errored before writing.
       - name: Ensure Trivy config SARIF exists
@@ -242,14 +257,10 @@ jobs:
 
       # Gate pass: fail on medium+.
       - name: Trivy config (gate)
-        uses: aquasecurity/trivy-action@v0.33.0
-        with:
-          scan-type: config
-          scan-ref: .
-          format: table
-          severity: MEDIUM,HIGH,CRITICAL
-          exit-code: "1"
-          cache-dir: ~/.cache/trivy
+        run: |
+          trivy config --format table \
+            --severity MEDIUM,HIGH,CRITICAL \
+            --exit-code 1 .
 
   security-gate:
     if: always() && github.repository == 'fardani235/molecule'
