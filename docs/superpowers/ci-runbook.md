@@ -46,3 +46,25 @@ grep -rln "fardani235" .github/ docs/superpowers/ | xargs sed -i 's/fardani235/<
 ```
 
 Then update the runbook and open a PR.
+
+## Verification runbook
+
+After each workflow commit, verify locally with the commands below, then push. Each task includes specific commands.
+
+### Task 2 — CodeQL SAST
+
+After pushing to remote:
+
+```bash
+gh workflow run security.yml --ref devsecops-ci-improvements
+sleep 5
+gh run list --workflow=security.yml --limit 1
+```
+
+Then watch for completion:
+
+```bash
+gh run watch $(gh run list --workflow=security.yml --limit 1 --json databaseId -q '.[0].databaseId')
+```
+
+Expected: `sast-codeql` job succeeds, artifact `sarif-codeql` is available.
