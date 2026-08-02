@@ -49,3 +49,56 @@ jobs:
           name: sarif-codeql
           path: sarif-results/*.sarif
           retention-days: 30
+
+  sca-pip-audit:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Export requirements from uv.lock
+        run: uv export --format requirements-txt --no-hashes --no-emit-project -o requirements.txt
+
+      - name: Run pip-audit
+        id: audit
+        uses: pypa/gh-action-pip-audit@v1
+        with:
+          inputs: requirements.txt
+          # SARIF output enables gate + code-scanning upload.
+          extra-args: --format sarif --output pip-audit.sarif --strict
+
+      - name: Upload SARIF to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pip-audit.sarif
+          category: pip-audit
+
+      - name: Upload pip-audit SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-pip-audit
+          path: pip-audit.sarif
+          retention-days: 30
+
+  sca-dep-review:
+    if: github.repository_owner == 'fardani235' && github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Config lives at .github/security/dep-review.yml.
+          config-file: .github/security/dep-review.yml
+          # Retry-safe: soft-fail is off; job fails inline on moderate+.
+          # Dependency-Review does not emit SARIF; its job failure is what
+          # feeds the gate (via `needs.*.result` in the gate job).
