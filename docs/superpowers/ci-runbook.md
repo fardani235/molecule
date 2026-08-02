@@ -443,28 +443,7 @@ Expected outcome:
 
 #### Acceptance evidence
 
-After all six verification steps pass, record the run URLs and commit evidence here. Fill in the template below with real run URLs from your GitHub Actions runs.
-
-```markdown
-## Acceptance evidence
-
-- Failing gate run: <URL>
-- Green PR run: <URL>
-- Release dry-run: <URL>
-- Baseline metric commit: <URL>
-- Post-cache metric commit: <URL>
-```
-
-Example:
-```markdown
-## Acceptance evidence
-
-- Failing gate run: https://github.com/fardani235/molecule/actions/runs/1234567890
-- Green PR run: https://github.com/fardani235/molecule/actions/runs/1234567891
-- Release dry-run: https://github.com/fardani235/molecule/actions/runs/1234567892
-- Baseline metric commit: https://github.com/fardani235/molecule/commit/abc1234def5678
-- Post-cache metric commit: https://github.com/fardani235/molecule/commit/def5678abc1234
-```
+After all six verification steps pass, record the run URLs and commit evidence in the section below. Fill in the template fields with real URLs from your GitHub Actions runs and commits.
 
 ## Acceptance evidence
 
