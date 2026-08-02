@@ -778,3 +778,29 @@ Follow `docs/superpowers/ci-devsecops.md` → mark `security-gate` as a required
 **Placeholder scan:** Benchmark numbers in Task 8 Step 2 are intentionally filled by Task 9 (measured at runtime) — flagged as `_<fill from run>_`, not a plan gap. No other placeholders.
 
 **Type/name consistency:** Job names (`secrets`, `sast`, `sca`, `config`, `security-gate`, `lint-cached`), artifact names, and SARIF categories are consistent across tasks and the docs table in Task 8.
+
+---
+
+## Post-Implementation Amendments
+
+The final whole-branch code review produced four improvements applied on top of
+the tasks above. The workflow files in `.github/workflows/` are the source of
+truth; this note records the deltas from the task text:
+
+1. **`security-gate` requires all-success.** The gate now fails unless every
+   `needs.*.result` is exactly `success` (a `skipped` result no longer passes the
+   gate silently), instead of only matching `failure|cancelled`.
+2. **Empty-SARIF fallback for bandit/trivy.** Each of the `sast`, `sca`, and
+   `config` jobs writes a valid minimal empty SARIF
+   (`{"version":"2.1.0",...,"runs":[]}`) if the scanner produced no file, so a
+   scanner *error* never breaks the `upload-sarif` step (mirrors the gitleaks
+   fallback).
+3. **`ci-cached` timer moved before cache restore.** The `t0` start-time capture
+   now runs right after checkout, so the measured window includes uv + tox/tool
+   cache restore — the delta the cold-vs-warm benchmark is meant to show.
+4. **Bandit report/gate consistency.** The bandit report pass also uses
+   `-c .bandit`, so report and gate scan the same configured target set.
+
+Deferred to Task 9 (live validation): confirm Trivy parses `uv.lock` for SCA;
+decide whether the Trivy config gate needs a `.trivyignore` if it is too chatty
+on Ansible content.
