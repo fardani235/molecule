@@ -73,3 +73,45 @@ jobs:
       - name: Gitleaks (gate)
         run: |
           gitleaks detect --source=. --redact --no-git=false --exit-code=1 --verbose
+
+  sast:
+    if: github.repository == 'fardani235/molecule'
+    name: sast (bandit)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install Bandit
+        run: python3 -m pip install --user "bandit[sarif,toml]>=1.8.0"
+
+      # Report pass: scan everything, emit SARIF, never fail here.
+      - name: Bandit (report)
+        run: |
+          python3 -m bandit -r src community.molecule/plugins \
+            -f sarif -o bandit-report.sarif || true
+
+      - name: Upload Bandit SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit-report.sarif
+          category: bandit
+
+      - name: Upload Bandit report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.sarif
+          retention-days: 30
+
+      # Gate pass: fail on MEDIUM+ severity AND MEDIUM+ confidence, honoring .bandit excludes.
+      - name: Bandit (gate)
+        run: |
+          python3 -m bandit -c .bandit -r src community.molecule/plugins \
+            --severity-level medium --confidence-level medium
