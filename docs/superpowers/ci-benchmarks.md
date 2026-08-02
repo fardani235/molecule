@@ -14,8 +14,8 @@ miss) against a subsequent warm run (cache hit).
 
 | Run   | State            | tool cache hit | Install + lint duration |
 |-------|------------------|----------------|-------------------------|
-| Cold  | cache miss       | false          | _<fill from run>_ s     |
-| Warm  | cache hit        | true           | _<fill from run>_ s     |
+| Cold  | cache miss       | false          | _TBD_ s                 |
+| Warm  | cache hit        | true           | _TBD_ s                 |
 
-**Speedup:** _<cold − warm>_ s saved (_<pct>_% faster) on the install + lint
-phase with warm caches.
+**Speedup:** _TBD_ s saved (_TBD_% faster) on the install + lint phase with warm
+caches. (Values filled in after the Task 9 CI runs.)
