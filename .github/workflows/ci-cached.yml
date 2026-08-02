@@ -1,0 +1,88 @@
+---
+name: ci-cached
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint-cached:
+    if: github.repository == 'fardani235/molecule'
+    name: lint (cached)
+    runs-on: ubuntu-24.04
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv (with built-in cache)
+        id: setup-uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Cache tox + tool caches
+        id: toolcache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tox
+            .cache
+          key: toolcache-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            toolcache-${{ runner.os }}-
+
+      - name: Record start time
+        id: t0
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Install tox
+        run: uv tool install "tox>=4.46.0" --with tox-uv
+
+      - name: Run lint (cached tox env)
+        run: uv tool run --from tox tox -e lint
+
+      - name: Record end time + emit metrics
+        if: always()
+        id: t1
+        run: |
+          end=$(date +%s)
+          start='${{ steps.t0.outputs.start }}'
+          duration=$(( end - start ))
+          uv_hit='${{ steps.setup-uv.outputs.cache-hit }}'
+          tool_hit='${{ steps.toolcache.outputs.cache-hit }}'
+          echo "uv cache hit: ${uv_hit:-false}"
+          [ "$tool_hit" = "true" ] && warm="warm (cache hit)" || warm="cold (cache miss)"
+          {
+            echo "## CI Cache Benchmark"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Run state | $warm |"
+            echo "| tox/tool cache hit | ${tool_hit:-false} |"
+            echo "| Install + lint duration | ${duration}s |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "run_state=$warm" >> ci-timing.txt
+          echo "tool_cache_hit=${tool_hit:-false}" >> ci-timing.txt
+          echo "duration_seconds=$duration" >> ci-timing.txt
+
+      - name: Upload timing artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-timing-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-timing.txt
+          retention-days: 30
