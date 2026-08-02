@@ -140,3 +140,47 @@ gh run watch $(gh run list --workflow=security.yml --limit 1 --json databaseId -
 ```
 
 Expected: `sca-trivy-fs` job succeeds, artifact `sarif-trivy` is available.
+
+### Task 7 — SARIF gate
+
+After pushing to remote:
+
+```bash
+gh workflow run security.yml --ref devsecops-ci-improvements
+sleep 5
+gh run list --workflow=security.yml --limit 1
+```
+
+Then watch for completion:
+
+```bash
+gh run watch $(gh run list --workflow=security.yml --limit 1 --json databaseId -q '.[0].databaseId')
+```
+
+Expected: `gate` job succeeds when all upstream scanners have zero Medium+ findings and no allowlist entries are expired; consolidated artifact `security-report` is available.
+
+To verify the gate fails on an expired allowlist entry (requires push access):
+
+```bash
+git checkout -b probe-expired-allowlist
+python3 - <<'PY'
+import yaml
+p = ".github/security/allowlist.yml"
+d = yaml.safe_load(open(p)) or {"suppressions": []}
+d["suppressions"].append({"id":"TEST-EXPIRED","tool":"pip-audit","reason":"gate test","owner":"ci","expires":"2020-01-01"})
+open(p, "w").write(yaml.safe_dump(d, sort_keys=False))
+PY
+git add .github/security/allowlist.yml
+git commit -m "probe: add expired allowlist entry (do not merge)"
+git push origin probe-expired-allowlist
+gh workflow run security.yml --ref probe-expired-allowlist
+gh run watch $(gh run list --workflow=security.yml --branch probe-expired-allowlist --limit 1 --json databaseId -q '.[0].databaseId') || true
+gh run view $(gh run list --workflow=security.yml --branch probe-expired-allowlist --limit 1 --json databaseId -q '.[0].databaseId') --log-failed | grep -F "TEST-EXPIRED"
+
+# Clean up.
+git checkout devsecops-ci-improvements
+git branch -D probe-expired-allowlist
+git push origin --delete probe-expired-allowlist
+```
+
+Expected: the `gate` job conclusion is `failure`; log contains the expired-entries error.

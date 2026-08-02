@@ -256,3 +256,44 @@ jobs:
           name: sarif-trivy
           path: trivy.sarif
           retention-days: 30
+
+  gate:
+    if: github.repository_owner == 'fardani235' && always()
+    needs:
+      - sast-codeql
+      - sca-pip-audit
+      - sca-dep-review
+      - secrets-gitleaks
+      - iac-zizmor
+      - iac-ansible-lint-sec
+      - sca-trivy-fs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all SARIF artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sarif-*
+          path: sarif/
+          merge-multiple: true
+
+      - name: Run gate
+        id: gate
+        run: .github/security/gate.sh sarif .github/security/allowlist.yml security-report.json
+
+      - name: Upload consolidated security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.json
+          retention-days: 30
+
+      - name: Fail if any upstream job failed
+        if: |
+          contains(needs.*.result, 'failure')
+        run: |
+          echo "::error::One or more scanner jobs failed; see the job list."
+          exit 1
