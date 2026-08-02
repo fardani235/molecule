@@ -379,7 +379,7 @@ Add under `jobs:` in `.github/workflows/security.yml`:
 
       - name: Run pip-audit
         id: audit
-        uses: pypa/gh-action-pip-audit@v1.1.0
+        uses: pypa/gh-action-pip-audit@v1
         with:
           inputs: requirements.txt
           # SARIF output enables gate + code-scanning upload.
@@ -416,12 +416,11 @@ Add under `jobs:`:
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
         with:
-          fail-on-severity: moderate
-          comment-summary-in-pr: on-failure
-          # Emits SARIF so the gate can consume it uniformly.
-          # https://github.com/actions/dependency-review-action#configuration
+          # Config lives at .github/security/dep-review.yml.
           config-file: .github/security/dep-review.yml
           # Retry-safe: soft-fail is off; job fails inline on moderate+.
+          # Dependency-Review does not emit SARIF; its job failure is what
+          # feeds the gate (via `needs.*.result` in the gate job).
 ```
 
 Also create `.github/security/dep-review.yml`:
@@ -861,9 +860,10 @@ Expected: gate job succeeds; consolidated report exists with `runs` array coveri
 
 - [ ] **Step 7: Prove the gate fails on a Medium+ finding**
 
-Add a temporary allowlist entry with a past `expires` date, dispatch again, and confirm the gate fails with the expired-entries error. Then remove the entry.
+Add a temporary allowlist entry with a past `expires` date on a probe branch, push it, wait for the run to fail, then delete the branch.
 
 ```bash
+git checkout -b probe-expired-allowlist
 python3 - <<'PY'
 import yaml
 p = ".github/security/allowlist.yml"
@@ -871,14 +871,18 @@ d = yaml.safe_load(open(p)) or {"suppressions": []}
 d["suppressions"].append({"id":"TEST-EXPIRED","tool":"pip-audit","reason":"gate test","owner":"ci","expires":"2020-01-01"})
 open(p, "w").write(yaml.safe_dump(d, sort_keys=False))
 PY
-git stash push -m gate-fail-probe .github/security/allowlist.yml
-# Restore original file locally; the stash pop happens after dispatch.
-git checkout .github/security/allowlist.yml
-git stash pop
-gh workflow run security.yml --ref devsecops-ci-improvements
-gh run watch $(gh run list --workflow=security.yml --limit 1 --json databaseId -q '.[0].databaseId') || true
-# Expect: gate job fails with "Expired allowlist entries: TEST-EXPIRED".
-git checkout .github/security/allowlist.yml   # revert probe
+git add .github/security/allowlist.yml
+git commit -m "probe: add expired allowlist entry (do not merge)"
+git push origin probe-expired-allowlist
+gh workflow run security.yml --ref probe-expired-allowlist
+gh run watch $(gh run list --workflow=security.yml --branch probe-expired-allowlist --limit 1 --json databaseId -q '.[0].databaseId') || true
+# Expect: gate job conclusion == failure; log contains "Expired allowlist entries: TEST-EXPIRED".
+gh run view $(gh run list --workflow=security.yml --branch probe-expired-allowlist --limit 1 --json databaseId -q '.[0].databaseId') --log-failed | grep -F "TEST-EXPIRED"
+
+# Clean up.
+git checkout devsecops-ci-improvements
+git branch -D probe-expired-allowlist
+git push origin --delete probe-expired-allowlist
 ```
 
 Expected: the last run's `gate` job conclusion is `failure`; log contains the expired-entries error.
@@ -1112,8 +1116,19 @@ Append this job under `jobs:`:
           gh release download "${{ github.event.release.tag_name }}" \
             --pattern '*.whl' --pattern '*.tar.gz' --dir dist
 
+      - name: Check dist contents
+        id: dist_present
+        run: |
+          if [[ -d dist && -n "$(ls -A dist 2>/dev/null)" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No dist/ artifacts present (workflow_dispatch without a release); Trivy dist gate soft-skipped."
+          fi
+
       - name: Trivy scan of built dists
         id: trivy
+        if: steps.dist_present.outputs.present == 'true'
         uses: aquasecurity/trivy-action@0.24.0
         with:
           scan-type: fs
@@ -1127,14 +1142,14 @@ Append this job under `jobs:`:
         continue-on-error: ${{ inputs.override_gate == true }}
 
       - name: Upload SARIF to code-scanning
-        if: always()
+        if: steps.dist_present.outputs.present == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-dists.sarif
           category: trivy-dists
 
       - name: Upload Trivy dist SARIF artifact
-        if: always()
+        if: steps.dist_present.outputs.present == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: sarif-trivy-dists
