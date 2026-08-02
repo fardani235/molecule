@@ -148,3 +148,77 @@ jobs:
           name: sarif-gitleaks
           path: gitleaks.sarif
           retention-days: 30
+
+  iac-zizmor:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zizmor
+        run: |
+          python3 -m pip install --user "zizmor>=1.0.0"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run zizmor on workflows
+        run: |
+          zizmor --format sarif --min-severity medium .github/workflows/ \
+            > zizmor.sarif || true
+          # zizmor exits non-zero when it finds anything; we let the gate
+          # decide. Ensure the SARIF is always produced.
+          test -s zizmor.sarif || echo '{"version":"2.1.0","runs":[]}' > zizmor.sarif
+
+      - name: Upload SARIF to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
+      - name: Upload zizmor SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-zizmor
+          path: zizmor.sarif
+          retention-days: 30
+
+  iac-ansible-lint-sec:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install ansible-lint
+        run: |
+          uv tool install "ansible-lint>=25.0"
+
+      - name: Run ansible-lint (security profile)
+        run: |
+          set +e
+          uv tool run ansible-lint --profile production --write-list \
+            --sarif-file ansible-lint.sarif \
+            community.molecule/ tests/fixtures/ || true
+          # Ensure file exists even when no findings.
+          test -s ansible-lint.sarif || echo '{"version":"2.1.0","runs":[]}' > ansible-lint.sarif
+
+      - name: Upload SARIF to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ansible-lint.sarif
+          category: ansible-lint
+
+      - name: Upload ansible-lint SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-ansible-lint
+          path: ansible-lint.sarif
+          retention-days: 30
