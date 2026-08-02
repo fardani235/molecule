@@ -56,6 +56,7 @@ jobs:
 
       - name: Upload Gitleaks SARIF to Security tab
         if: always()
+        continue-on-error: true # code scanning may be disabled on the fork; artifact still uploaded
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks-report.sarif
@@ -95,13 +96,15 @@ jobs:
         run: |
           python3 -m bandit -c .bandit -r src community.molecule/plugins \
             -f sarif -o bandit-report.sarif || true
-          # Guarantee the SARIF file exists even if bandit errored before writing.
-          test -f bandit-report.sarif || \
-            printf '%s' '{"version":"2.1.0","runs":[]}' \
+          # Guarantee a valid, uploadable SARIF exists even if bandit errored
+          # before writing (code-scanning rejects a runs-less document).
+          test -s bandit-report.sarif || \
+            printf '%s' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"bandit","rules":[]}},"results":[]}]}' \
               > bandit-report.sarif
 
       - name: Upload Bandit SARIF to Security tab
         if: always()
+        continue-on-error: true # code scanning may be disabled on the fork; artifact still uploaded
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: bandit-report.sarif
@@ -129,7 +132,7 @@ jobs:
       contents: read
       security-events: write
     env:
-      TRIVY_VERSION: "0.65.0"
+      TRIVY_VERSION: "0.72.0"
       # Authenticated DB/metadata pulls avoid anonymous rate limits on forks.
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache
@@ -144,14 +147,17 @@ jobs:
           restore-keys: |
             trivy-db-
 
-      # Install the Trivy CLI directly (the trivy-action wrapper bundles a
-      # broken setup-trivy transitive dep and an unauthenticated installer that
-      # hits GitHub rate limits on forks). The CLI gives full control.
+      # Install the Trivy CLI by downloading the release tarball directly. The
+      # trivy-action wrapper bundles a broken setup-trivy transitive dep and its
+      # install.sh proved flaky on forks; a plain tarball fetch is reliable.
       - name: Install Trivy
         run: |
           set -euo pipefail
-          curl -sSL "https://raw.githubusercontent.com/aquasecurity/trivy/v${TRIVY_VERSION}/contrib/install.sh" \
-            | sudo sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o trivy.tar.gz
+          tar -xzf trivy.tar.gz trivy
+          sudo install trivy /usr/local/bin/trivy
+          rm -f trivy.tar.gz trivy
           trivy --version
 
       # Report pass: all severities, SARIF, never fails the job.
@@ -167,12 +173,13 @@ jobs:
       - name: Ensure Trivy SCA SARIF exists
         if: always()
         run: |
-          test -f trivy-sca-report.sarif || \
-            printf '%s' '{"version":"2.1.0","runs":[]}' \
+          test -s trivy-sca-report.sarif || \
+            printf '%s' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"trivy","rules":[]}},"results":[]}]}' \
               > trivy-sca-report.sarif
 
       - name: Upload Trivy SCA SARIF to Security tab
         if: always()
+        continue-on-error: true # code scanning may be disabled on the fork; artifact still uploaded
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-sca-report.sarif
@@ -201,7 +208,7 @@ jobs:
       contents: read
       security-events: write
     env:
-      TRIVY_VERSION: "0.65.0"
+      TRIVY_VERSION: "0.72.0"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache
     steps:
@@ -215,12 +222,15 @@ jobs:
           restore-keys: |
             trivy-db-
 
-      # Install the Trivy CLI directly (see the sca job for rationale).
+      # Install the Trivy CLI by downloading the release tarball (see sca job).
       - name: Install Trivy
         run: |
           set -euo pipefail
-          curl -sSL "https://raw.githubusercontent.com/aquasecurity/trivy/v${TRIVY_VERSION}/contrib/install.sh" \
-            | sudo sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o trivy.tar.gz
+          tar -xzf trivy.tar.gz trivy
+          sudo install trivy /usr/local/bin/trivy
+          rm -f trivy.tar.gz trivy
           trivy --version
 
       # Report pass: all severities, SARIF, never fails the job.
@@ -236,12 +246,13 @@ jobs:
       - name: Ensure Trivy config SARIF exists
         if: always()
         run: |
-          test -f trivy-config-report.sarif || \
-            printf '%s' '{"version":"2.1.0","runs":[]}' \
+          test -s trivy-config-report.sarif || \
+            printf '%s' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"trivy","rules":[]}},"results":[]}]}' \
               > trivy-config-report.sarif
 
       - name: Upload Trivy config SARIF to Security tab
         if: always()
+        continue-on-error: true # code scanning may be disabled on the fork; artifact still uploaded
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-config-report.sarif
