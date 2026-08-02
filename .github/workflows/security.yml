@@ -89,11 +89,16 @@ jobs:
       - name: Install Bandit
         run: python3 -m pip install --user "bandit[sarif,toml]>=1.8.0"
 
-      # Report pass: scan everything, emit SARIF, never fail here.
+      # Report pass: scan the same targets/excludes as the gate, emit SARIF,
+      # never fail here. Uses -c .bandit so report and gate stay consistent.
       - name: Bandit (report)
         run: |
-          python3 -m bandit -r src community.molecule/plugins \
+          python3 -m bandit -c .bandit -r src community.molecule/plugins \
             -f sarif -o bandit-report.sarif || true
+          # Guarantee the SARIF file exists even if bandit errored before writing.
+          test -f bandit-report.sarif || \
+            printf '%s' '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[]}' \
+              > bandit-report.sarif
 
       - name: Upload Bandit SARIF to Security tab
         if: always()
@@ -146,6 +151,14 @@ jobs:
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: "0"
           cache-dir: ~/.cache/trivy
+
+      # Guarantee the SARIF file exists even if trivy errored before writing.
+      - name: Ensure Trivy SCA SARIF exists
+        if: always()
+        run: |
+          test -f trivy-sca-report.sarif || \
+            printf '%s' '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[]}' \
+              > trivy-sca-report.sarif
 
       - name: Upload Trivy SCA SARIF to Security tab
         if: always()
@@ -204,6 +217,14 @@ jobs:
           exit-code: "0"
           cache-dir: ~/.cache/trivy
 
+      # Guarantee the SARIF file exists even if trivy errored before writing.
+      - name: Ensure Trivy config SARIF exists
+        if: always()
+        run: |
+          test -f trivy-config-report.sarif || \
+            printf '%s' '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[]}' \
+              > trivy-config-report.sarif
+
       - name: Upload Trivy config SARIF to Security tab
         if: always()
         uses: github/codeql-action/upload-sarif@v3
@@ -242,8 +263,18 @@ jobs:
         run: |
           results="${{ join(needs.*.result, ',') }}"
           echo "Scanner results: $results"
-          if echo "$results" | grep -qE 'failure|cancelled'; then
-            echo "::error::Security gate failed — one or more scanners reported medium+ findings."
+          # Require EVERY needed job to be exactly "success". Any other value
+          # (failure, cancelled, skipped, ...) fails the gate so a missing scan
+          # can never pass green.
+          gate_ok=1
+          IFS=','
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              gate_ok=0
+            fi
+          done
+          if [ "$gate_ok" -ne 1 ]; then
+            echo "::error::Security gate failed — one or more scanners did not succeed (medium+ findings or a scanner that did not run)."
             exit 1
           fi
           echo "All scanners passed. Security gate OK."

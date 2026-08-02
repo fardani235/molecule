@@ -24,6 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Capture start time BEFORE any cache restore/install so the timed window
+      # includes uv restore + tox/tool cache restore + install + lint — the delta
+      # that caching is meant to save.
+      - name: Record start time
+        id: t0
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Install uv (with built-in cache)
         id: setup-uv
         uses: astral-sh/setup-uv@v6
@@ -44,10 +51,6 @@ jobs:
           key: toolcache-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
           restore-keys: |
             toolcache-${{ runner.os }}-
-
-      - name: Record start time
-        id: t0
-        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Install tox
         run: uv tool install "tox>=4.46.0" --with tox-uv
