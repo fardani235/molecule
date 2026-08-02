@@ -115,3 +115,61 @@ jobs:
         run: |
           python3 -m bandit -c .bandit -r src community.molecule/plugins \
             --severity-level medium --confidence-level medium
+
+  sca:
+    if: github.repository == 'fardani235/molecule'
+    name: sca (trivy vuln)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache Trivy DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-
+
+      # Report pass: all severities, SARIF, never fails.
+      - name: Trivy SCA (report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln
+          scan-ref: .
+          format: sarif
+          output: trivy-sca-report.sarif
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+          cache-dir: ~/.cache/trivy
+
+      - name: Upload Trivy SCA SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-sca-report.sarif
+          category: trivy-sca
+
+      - name: Upload Trivy SCA report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sca-report
+          path: trivy-sca-report.sarif
+          retention-days: 30
+
+      # Gate pass: fail on medium+.
+      - name: Trivy SCA (gate)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln
+          scan-ref: .
+          format: table
+          severity: MEDIUM,HIGH,CRITICAL
+          exit-code: "1"
+          cache-dir: ~/.cache/trivy
