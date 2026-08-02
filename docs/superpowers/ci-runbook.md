@@ -184,3 +184,27 @@ git push origin --delete probe-expired-allowlist
 ```
 
 Expected: the `gate` job conclusion is `failure`; log contains the expired-entries error.
+
+### Task 8 — warm-cache
+
+After pushing to remote:
+
+```bash
+gh workflow run tox.yml --ref devsecops-ci-improvements
+sleep 5
+gh run list --workflow=tox.yml --limit 1
+```
+
+Then watch for completion:
+
+```bash
+gh run watch $(gh run list --workflow=tox.yml --limit 1 --json databaseId -q '.[0].databaseId')
+```
+
+Expected: `warm-cache` job succeeds and reports cache miss on first run. On a second dispatch, `warm-cache` reports cache hit:
+
+```bash
+gh run list --workflow=tox.yml --limit 2
+```
+
+Second run's `warm-cache` step logs `Cache restored from key: uv-...` or similar for other caches.
