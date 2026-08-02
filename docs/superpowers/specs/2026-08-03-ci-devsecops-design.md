@@ -99,6 +99,7 @@ toolchain, independent of the upstream-delegated `tox.yml`.
 Fork-guarded.
 
 **Caching:**
+
 - `astral-sh/setup-uv` built-in cache keyed on `uv.lock`.
 - Explicit caches: `~/.cache/uv`, `.tox/` (keyed on `pyproject.toml`+`uv.lock`),
   `.cache/` (mypy/ruff, already configured to live there via `pyproject.toml`).
@@ -107,6 +108,7 @@ Fork-guarded.
 not a full matrix (the real matrix stays in `tox.yml`).
 
 **Measurement:**
+
 - Each run records **cache hit/miss** (cache action outputs) and **wall-clock**
   of setup+install, written to `$GITHUB_STEP_SUMMARY` as a table
   (*cache hit? / install time / total time*).

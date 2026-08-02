@@ -28,9 +28,11 @@
 Establishes `security.yml` with triggers, fork guard, concurrency, and the first scanner (Gitleaks) end-to-end (report + gate + SARIF + artifact). Proves the two-pass pattern before adding more scanners.
 
 **Files:**
+
 - Create: `.github/workflows/security.yml`
 
 **Interfaces:**
+
 - Produces: workflow `security` with jobs `secrets` (and later `sast`, `sca`, `config`, `security-gate`). Artifact naming convention: `<tool>-report.<ext>`. SARIF category per tool.
 
 - [ ] **Step 1: Create the workflow with triggers, guard, and the secrets job**
@@ -142,10 +144,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 Adds the `sast` job. Bandit scans `src/` and collection plugins, gates at medium+ severity & confidence, excludes `tests/` from the gate (still reported).
 
 **Files:**
+
 - Modify: `.github/workflows/security.yml` (add `sast` job)
 - Create: `.bandit` (config)
 
 **Interfaces:**
+
 - Consumes: workflow structure from Task 1.
 - Produces: job `sast`, artifact `bandit-report`, SARIF category `bandit`.
 
@@ -233,9 +237,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 Adds the `sca` job scanning the dependency lockfile for CVEs, gating at medium+, with Trivy DB caching.
 
 **Files:**
+
 - Modify: `.github/workflows/security.yml` (add `sca` job)
 
 **Interfaces:**
+
 - Consumes: workflow structure from Task 1.
 - Produces: job `sca`, artifact `trivy-sca-report`, SARIF category `trivy-sca`. Establishes the reusable Trivy cache step (`~/.cache/trivy`) reused by Task 4.
 
@@ -322,9 +328,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 Adds the `config` job scanning Ansible YAML and config files for misconfigurations, gating at medium+.
 
 **Files:**
+
 - Modify: `.github/workflows/security.yml` (add `config` job)
 
 **Interfaces:**
+
 - Consumes: workflow structure + Trivy cache pattern from Task 3.
 - Produces: job `config`, artifact `trivy-config-report`, SARIF category `trivy-config`.
 
@@ -409,9 +417,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 Adds the single job that `needs:` all four scanners — the required status check for branch protection.
 
 **Files:**
+
 - Modify: `.github/workflows/security.yml` (add `security-gate` job)
 
 **Interfaces:**
+
 - Consumes: jobs `secrets`, `sast`, `sca`, `config`.
 - Produces: job `security-gate` — the name to mark as required in branch protection.
 
@@ -458,9 +468,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 Creates the fork-owned cached lint job and writes cache-hit + timing metrics to the step summary and a timing artifact.
 
 **Files:**
+
 - Create: `.github/workflows/ci-cached.yml`
 
 **Interfaces:**
+
 - Produces: workflow `ci-cached`, job `lint-cached`, artifact `ci-timing`, step-summary timing table.
 
 - [ ] **Step 1: Create the workflow**
@@ -577,9 +589,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 Adds `upload-artifact` steps for built dists and the collection tarball. No publish step is changed.
 
 **Files:**
+
 - Modify: `.github/workflows/release.yml`
 
 **Interfaces:**
+
 - Consumes: existing `release` and `publish-collection` jobs.
 - Produces: artifacts `python-dist` and `collection-tarball`.
 
@@ -631,10 +645,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 Documents how to read findings, set up the required check, and the cold-vs-warm caching results.
 
 **Files:**
+
 - Create: `docs/superpowers/ci-devsecops.md`
 - Create: `docs/superpowers/ci-benchmarks.md`
 
 **Interfaces:**
+
 - Consumes: everything above (job names, artifact names).
 
 - [ ] **Step 1: Write `docs/superpowers/ci-devsecops.md`**
@@ -766,6 +782,7 @@ Follow `docs/superpowers/ci-devsecops.md` → mark `security-gate` as a required
 ## Self-Review
 
 **Spec coverage:**
+
 - SAST/SCA/secrets/IaC scanning → Tasks 1–4. ✓
 - Gate fails on medium/high/critical → gate passes (Tasks 2–4) + aggregation (Task 5). ✓
 - SARIF → Security tab + downloadable artifacts → every scanner task. ✓

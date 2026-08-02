@@ -122,6 +122,7 @@ rrequirements
 runcmd
 saez
 sandboxed
+sarif
 schemafile
 seccomp
 selectattr
