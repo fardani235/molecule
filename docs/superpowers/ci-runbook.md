@@ -208,3 +208,21 @@ gh run list --workflow=tox.yml --limit 2
 ```
 
 Second run's `warm-cache` step logs `Cache restored from key: uv-...` or similar for other caches.
+
+### Task 9 — Release SBOM + Trivy
+
+After pushing to remote:
+
+```bash
+gh workflow run release.yml -f pypi_publish=false -f galaxy_publish=false
+sleep 5
+gh run list --workflow=release.yml --limit 1
+```
+
+Then watch for completion:
+
+```bash
+gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId -q '.[0].databaseId')
+```
+
+Expected: `release` job builds dists and emits SBOMs (artifact `sbom` appears); `release-trivy-dists` runs (skipped on non-release events without built dists — that is acceptable, and the artifact will simply be absent for the dry-run).
