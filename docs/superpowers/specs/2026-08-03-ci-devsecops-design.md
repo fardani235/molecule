@@ -35,7 +35,7 @@ and upload release artifacts, but must not change publish steps.)
 
 Two new fork-owned workflows plus a small additive change to `release.yml`:
 
-```
+```text
 .github/workflows/
 ├── security.yml   (NEW)  ← DevSecOps gate: 4 scanners, blocks on medium+
 ├── ci-cached.yml  (NEW)  ← fork-owned cached lint/test job + speedup measurement

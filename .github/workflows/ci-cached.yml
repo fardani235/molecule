@@ -78,9 +78,11 @@ jobs:
             echo "| tox/tool cache hit | ${tool_hit:-false} |"
             echo "| Install + lint duration | ${duration}s |"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "run_state=$warm" >> ci-timing.txt
-          echo "tool_cache_hit=${tool_hit:-false}" >> ci-timing.txt
-          echo "duration_seconds=$duration" >> ci-timing.txt
+          {
+            echo "run_state=$warm"
+            echo "tool_cache_hit=${tool_hit:-false}"
+            echo "duration_seconds=$duration"
+          } >> ci-timing.txt
 
       - name: Upload timing artifact
         if: always()

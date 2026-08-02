@@ -4,6 +4,7 @@ CMDB
 CPUS
 Cfmpr
 Dequènes
+Dockerfiles
 ENVNAME
 Kubevirt
 Lifecycle
@@ -12,6 +13,7 @@ NOPASSWD
 Nocows
 Prerun
 Rolebinding
+SARIF
 Sbarnea
 Serviceaccount
 Sorin
@@ -50,6 +52,7 @@ decentral
 delenv
 dependee
 dind
+dists
 dotdot
 emptydisk
 endgroup
@@ -58,6 +61,7 @@ envlist
 envname
 exitstatus
 failover
+fardani
 fileglob
 followlinks
 fooo
@@ -86,7 +90,9 @@ makereport
 metacopy
 mfoo
 minversion
+misconfig
 modifyitems
+monitorable
 mountopt
 myapp
 mygroups
@@ -103,12 +109,14 @@ ntlm
 overlayfs
 passenv
 passwordless
+prek
 prepender
 prerun
 profisioner
 pycolors
 reget
 resetall
+ridwan
 rolebinding
 rrequirements
 runcmd
@@ -133,6 +141,7 @@ testrole
 testuser
 tmpfs
 tofile
+toolcache
 topdown
 tryfirst
 tsoh
