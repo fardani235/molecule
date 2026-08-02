@@ -428,7 +428,7 @@ Adds the single job that `needs:` all four scanners — the required status chec
     steps:
       - name: Verify all scanners passed
         run: |
-          results='${{ join(needs.*.result, ",") }}'
+          results="${{ join(needs.*.result, ',') }}"
           echo "Scanner results: $results"
           if echo "$results" | grep -qE 'failure|cancelled'; then
             echo "::error::Security gate failed — one or more scanners reported medium+ findings."
