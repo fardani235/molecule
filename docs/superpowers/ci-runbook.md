@@ -226,3 +226,16 @@ gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId -q
 ```
 
 Expected: `release` job builds dists and emits SBOMs (artifact `sbom` appears); `release-trivy-dists` runs (skipped on non-release events without built dists — that is acceptable, and the artifact will simply be absent for the dry-run).
+
+### Task 10 — CI metrics
+
+Before merging Task 8's caching, run:
+
+```bash
+gh workflow run ci-metrics.yml
+gh run watch $(gh run list --workflow=ci-metrics.yml --limit 1 --json databaseId -q '.[0].databaseId')
+```
+
+Expected: the workflow appends a baseline row to `docs/superpowers/ci-speed-report.md` and either commits it directly (if PR-creation permissions are wired) or opens PR `chore/ci-metrics-update`.
+
+Merge the baseline row before merging any caching changes to Task 8. That's what makes the "improvement" number honest.
