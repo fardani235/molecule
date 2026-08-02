@@ -122,3 +122,21 @@ gh run watch $(gh run list --workflow=security.yml --limit 1 --json databaseId -
 ```
 
 Expected: `iac-zizmor` and `iac-ansible-lint-sec` jobs succeed, artifacts `sarif-zizmor` and `sarif-ansible-lint` are available.
+
+### Task 6 — Trivy filesystem
+
+After pushing to remote:
+
+```bash
+gh workflow run security.yml --ref devsecops-ci-improvements
+sleep 5
+gh run list --workflow=security.yml --limit 1
+```
+
+Then watch for completion:
+
+```bash
+gh run watch $(gh run list --workflow=security.yml --limit 1 --json databaseId -q '.[0].databaseId')
+```
+
+Expected: `sca-trivy-fs` job succeeds, artifact `sarif-trivy` is available.
