@@ -62,22 +62,35 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    env:
+      GITLEAKS_VERSION: "8.21.2"
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history so gitleaks scans all commits
 
-      # Report pass: never fails the build, always produces SARIF.
+      # Install the gitleaks CLI directly (the gitleaks-action wrapper is
+      # env-var driven, only emits SARIF when secrets are found, and needs a
+      # license for orgs). The CLI gives full control over report path + exit code.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # Report pass: scan full history, always produce SARIF, never fail here.
       - name: Gitleaks (report)
-        uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
-        env:
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
-        with:
-          args: >-
-            detect --source=. --redact --no-git=false
-            --report-format=sarif --report-path=gitleaks-report.sarif
-            --exit-code=0
+        run: |
+          gitleaks detect --source=. --redact --no-git=false \
+            --report-format=sarif --report-path=gitleaks-report.sarif \
+            --exit-code=0 --verbose || true
+          # Guarantee the SARIF file exists even if gitleaks wrote nothing.
+          test -f gitleaks-report.sarif || \
+            gitleaks detect --source=. --redact --report-format=sarif \
+              --report-path=gitleaks-report.sarif --exit-code=0 || true
 
       - name: Upload Gitleaks SARIF to Security tab
         if: always()
@@ -96,10 +109,8 @@ jobs:
 
       # Gate pass: any leak fails the job.
       - name: Gitleaks (gate)
-        uses: gitleaks/gitleaks-action@v2
-        with:
-          args: >-
-            detect --source=. --redact --no-git=false --exit-code=1
+        run: |
+          gitleaks detect --source=. --redact --no-git=false --exit-code=1 --verbose
 ```
 
 - [ ] **Step 2: Validate the YAML**
@@ -112,6 +123,8 @@ Expected: no errors. Fix any reported issues before continuing.
 
 Run (if `gitleaks` installed): `gitleaks detect --source=. --redact --no-git=false --exit-code=0 -v`
 Expected: command completes; note whether any leaks are reported (informational).
+Note: the workflow installs the gitleaks CLI (v8.21.2) rather than the
+`gitleaks-action` wrapper, so it fully controls `--report-path` and `--exit-code`.
 
 - [ ] **Step 4: Commit**
 
