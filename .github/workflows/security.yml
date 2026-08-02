@@ -1,0 +1,302 @@
+---
+name: security
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "0 3 * * *" # nightly drift monitoring
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    if: github.repository == 'fardani235/molecule'
+    name: secrets (gitleaks)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      GITLEAKS_VERSION: "8.21.2"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history so gitleaks scans all commits
+
+      # Install the gitleaks CLI directly (the gitleaks-action wrapper is
+      # env-var driven, only emits SARIF when secrets are found, and needs a
+      # license for orgs). The CLI gives full control over report path + exit code.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # Report pass: scan full history, always produce SARIF, never fail here.
+      - name: Gitleaks (report)
+        run: |
+          gitleaks detect --source=. --redact --no-git=false \
+            --report-format=sarif --report-path=gitleaks-report.sarif \
+            --exit-code=0 --verbose || true
+          # Guarantee the SARIF file exists even if gitleaks wrote nothing.
+          test -f gitleaks-report.sarif || \
+            gitleaks detect --source=. --redact --report-format=sarif \
+              --report-path=gitleaks-report.sarif --exit-code=0 || true
+
+      - name: Upload Gitleaks SARIF to Security tab
+        if: always()
+        continue-on-error: true # code scanning may be disabled on the fork; artifact still uploaded
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks-report.sarif
+          category: gitleaks
+
+      - name: Upload Gitleaks report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.sarif
+          retention-days: 30
+
+      # Gate pass: any leak fails the job.
+      - name: Gitleaks (gate)
+        run: |
+          gitleaks detect --source=. --redact --no-git=false --exit-code=1 --verbose
+
+  sast:
+    if: github.repository == 'fardani235/molecule'
+    name: sast (bandit)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install Bandit
+        run: python3 -m pip install --user "bandit[sarif,toml]>=1.8.0"
+
+      # Report pass: scan the same targets/excludes as the gate, emit SARIF,
+      # never fail here. Uses -c .bandit so report and gate stay consistent.
+      - name: Bandit (report)
+        run: |
+          python3 -m bandit -c .bandit -r src community.molecule/plugins \
+            -f sarif -o bandit-report.sarif || true
+          # Guarantee a valid, uploadable SARIF exists even if bandit errored
+          # before writing (code-scanning rejects a runs-less document).
+          test -s bandit-report.sarif || \
+            printf '%s' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"bandit","rules":[]}},"results":[]}]}' \
+              > bandit-report.sarif
+
+      - name: Upload Bandit SARIF to Security tab
+        if: always()
+        continue-on-error: true # code scanning may be disabled on the fork; artifact still uploaded
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit-report.sarif
+          category: bandit
+
+      - name: Upload Bandit report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.sarif
+          retention-days: 30
+
+      # Gate pass: fail on MEDIUM+ severity AND MEDIUM+ confidence, honoring .bandit excludes.
+      - name: Bandit (gate)
+        run: |
+          python3 -m bandit -c .bandit -r src community.molecule/plugins \
+            --severity-level medium --confidence-level medium
+
+  sca:
+    if: github.repository == 'fardani235/molecule'
+    name: sca (trivy vuln)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      TRIVY_VERSION: "0.72.0"
+      # Authenticated DB/metadata pulls avoid anonymous rate limits on forks.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache Trivy DB
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.trivycache
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-
+
+      # Install the Trivy CLI by downloading the release tarball directly. The
+      # trivy-action wrapper bundles a broken setup-trivy transitive dep and its
+      # install.sh proved flaky on forks; a plain tarball fetch is reliable.
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o trivy.tar.gz
+          tar -xzf trivy.tar.gz trivy
+          sudo install trivy /usr/local/bin/trivy
+          rm -f trivy.tar.gz trivy
+          trivy --version
+
+      # Report pass: all severities, SARIF, never fails the job.
+      - name: Trivy SCA (report)
+        continue-on-error: true
+        run: |
+          trivy fs --scanners vuln --format sarif \
+            --output trivy-sca-report.sarif \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 . || true
+
+      # Guarantee the SARIF file exists even if trivy errored before writing.
+      - name: Ensure Trivy SCA SARIF exists
+        if: always()
+        run: |
+          test -s trivy-sca-report.sarif || \
+            printf '%s' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"trivy","rules":[]}},"results":[]}]}' \
+              > trivy-sca-report.sarif
+
+      - name: Upload Trivy SCA SARIF to Security tab
+        if: always()
+        continue-on-error: true # code scanning may be disabled on the fork; artifact still uploaded
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-sca-report.sarif
+          category: trivy-sca
+
+      - name: Upload Trivy SCA report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sca-report
+          path: trivy-sca-report.sarif
+          retention-days: 30
+
+      # Gate pass: fail on medium+.
+      - name: Trivy SCA (gate)
+        run: |
+          trivy fs --scanners vuln --format table \
+            --severity MEDIUM,HIGH,CRITICAL \
+            --exit-code 1 .
+
+  config:
+    if: github.repository == 'fardani235/molecule'
+    name: config (trivy misconfig)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      TRIVY_VERSION: "0.72.0"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache Trivy DB
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.trivycache
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-
+
+      # Install the Trivy CLI by downloading the release tarball (see sca job).
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o trivy.tar.gz
+          tar -xzf trivy.tar.gz trivy
+          sudo install trivy /usr/local/bin/trivy
+          rm -f trivy.tar.gz trivy
+          trivy --version
+
+      # Report pass: all severities, SARIF, never fails the job.
+      - name: Trivy config (report)
+        continue-on-error: true
+        run: |
+          trivy config --format sarif \
+            --output trivy-config-report.sarif \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 . || true
+
+      # Guarantee the SARIF file exists even if trivy errored before writing.
+      - name: Ensure Trivy config SARIF exists
+        if: always()
+        run: |
+          test -s trivy-config-report.sarif || \
+            printf '%s' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"trivy","rules":[]}},"results":[]}]}' \
+              > trivy-config-report.sarif
+
+      - name: Upload Trivy config SARIF to Security tab
+        if: always()
+        continue-on-error: true # code scanning may be disabled on the fork; artifact still uploaded
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-config-report.sarif
+          category: trivy-config
+
+      - name: Upload Trivy config report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-config-report
+          path: trivy-config-report.sarif
+          retention-days: 30
+
+      # Gate pass: fail on medium+.
+      - name: Trivy config (gate)
+        run: |
+          trivy config --format table \
+            --severity MEDIUM,HIGH,CRITICAL \
+            --exit-code 1 .
+
+  security-gate:
+    if: always() && github.repository == 'fardani235/molecule'
+    name: security-gate
+    needs: [secrets, sast, sca, config]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Verify all scanners passed
+        run: |
+          results="${{ join(needs.*.result, ',') }}"
+          echo "Scanner results: $results"
+          # Require EVERY needed job to be exactly "success". Any other value
+          # (failure, cancelled, skipped, ...) fails the gate so a missing scan
+          # can never pass green.
+          gate_ok=1
+          IFS=','
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              gate_ok=0
+            fi
+          done
+          if [ "$gate_ok" -ne 1 ]; then
+            echo "::error::Security gate failed — one or more scanners did not succeed (medium+ findings or a scanner that did not run)."
+            exit 1
+          fi
+          echo "All scanners passed. Security gate OK."

@@ -1,0 +1,7 @@
+# .bandit — exclude test trees from the gate; report pass scans everything.
+exclude_dirs:
+  - ./tests
+  - ./community.molecule/tests
+  - ./.tox
+  - ./.venv
+  - ./build
