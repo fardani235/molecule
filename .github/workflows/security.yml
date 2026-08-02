@@ -1,0 +1,51 @@
+---
+name: security
+
+on:
+  pull_request:
+    branches: [main, "releases/**", "stable/**"]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"  # weekly Monday 03:00 UTC — supplements per-PR runs
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write   # required for SARIF upload
+  actions: read            # required by CodeQL
+
+jobs:
+  sast-codeql:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          config-file: .github/codeql/codeql-config.yml
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:python
+          output: sarif-results
+
+      - name: Upload CodeQL SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-codeql
+          path: sarif-results/*.sarif
+          retention-days: 30
