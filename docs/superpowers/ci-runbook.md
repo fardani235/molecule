@@ -372,7 +372,7 @@ cat docs/superpowers/ci-speed-report.md
 
 # Extract and display the timing column (column 3 after |)
 echo "Timing measurements (should trend downward or hold steady):"
-awk -F'|' '/^\| [0-9]{4}-[0-9]{2}-[0-9]{2}/{print "Date: " $1 ", Seconds: " $3}' docs/superpowers/ci-speed-report.md
+awk -F'|' '/^\| [0-9]{4}-[0-9]{2}-[0-9]{2}/{print $3}' docs/superpowers/ci-speed-report.md
 ```
 
 Expected outcome:
