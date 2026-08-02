@@ -1,0 +1,2 @@
+# One CVE ID per line. Every entry MUST have a matching row in
+# .github/security/allowlist.yml with tool: trivy and an expires date.

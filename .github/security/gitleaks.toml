@@ -1,0 +1,10 @@
+title = "molecule fork gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Rendered from .github/security/allowlist.yml (tool: gitleaks)"
+paths = [
+  '''tests/fixtures/security/.*''',
+]

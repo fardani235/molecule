@@ -1,0 +1,9 @@
+name: "molecule-fork-codeql-config"
+queries:
+  - uses: security-and-quality
+paths:
+  - src
+paths-ignore:
+  - tests/fixtures/**
+  - community.molecule/**
+  - docs/**
