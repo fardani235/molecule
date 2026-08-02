@@ -117,7 +117,7 @@ SARIF `warning` maps to ≥ Medium under CodeQL/GHSA conventions, so one predica
 `security.yml`:
 - `pull_request` (branches: `main`, `releases/**`, `stable/**`)
 - `push` to `main`
-- `schedule: 0 3 * * 1` (weekly Monday 03:00 UTC — catches new CVEs against unchanged code)
+- `schedule: 0 3 * * 1` (weekly Monday 03:00 UTC — catches new CVEs against otherwise-unchanged code; per-commit scanning is covered by the `pull_request` and `push` triggers above)
 - `workflow_dispatch`
 
 `ci-metrics.yml`:
