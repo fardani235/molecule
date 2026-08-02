@@ -86,3 +86,21 @@ gh run watch $(gh run list --workflow=security.yml --limit 1 --json databaseId -
 ```
 
 Expected: `sca-pip-audit` succeeds (unless a real CVE is present — in which case success = "gate is doing its job"; suppress via allowlist if triaged). `sca-dep-review` is skipped on non-PR dispatch (that's fine).
+
+### Task 4 — Gitleaks (secrets scanning)
+
+After pushing to remote:
+
+```bash
+gh workflow run security.yml --ref devsecops-ci-improvements
+sleep 5
+gh run list --workflow=security.yml --limit 1
+```
+
+Then watch for completion:
+
+```bash
+gh run watch $(gh run list --workflow=security.yml --limit 1 --json databaseId -q '.[0].databaseId')
+```
+
+Expected: `secrets-gitleaks` job succeeds, artifact `sarif-gitleaks` is available.
