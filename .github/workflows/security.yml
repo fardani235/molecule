@@ -255,3 +255,46 @@ jobs:
         with:
           name: sbom
           path: sbom.spdx.json
+
+  security-gate:
+    if: github.repository == 'fardani235/molecule' && always()
+    needs: [bandit, semgrep, pip-audit, gitleaks, trivy]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      # Rollout: start in warn mode, flip to 'enforce' after Task 11.
+      GATE_MODE: warn
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cache
+        with:
+          python-version: "3.13"
+
+      - name: Install PyYAML
+        run: uv pip install --system pyyaml
+
+      - name: Download all scanner artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: sarif-in
+          pattern: sarif-*
+          merge-multiple: false
+
+      - name: Run gate.py
+        id: gate
+        run: |
+          python .github/security/gate.py \
+            sarif-in/**/*.sarif \
+            --waivers .github/security/waivers.yaml \
+            --mode "$GATE_MODE" \
+            --output report.json \
+            ${{ github.event_name == 'schedule' && '--scheduled' || '' }}
+
+      - name: Upload consolidated report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: report.json
