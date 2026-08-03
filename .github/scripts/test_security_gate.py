@@ -147,3 +147,43 @@ def test_generate_summary_with_findings() -> None:
     assert "Failed" in summary
     assert "1 finding(s)" in summary
     assert "Hardcoded password" in summary
+
+
+def test_parse_bandit_invalid_json(tmp_path: Path) -> None:
+    scanner_dir = tmp_path / "bandit-results"
+    scanner_dir.mkdir(parents=True)
+    (scanner_dir / "bandit-results.json").write_text("{invalid json}")
+    findings = parse_bandit(scanner_dir)
+    assert findings == []
+
+
+def test_parse_semgrep_invalid_json(tmp_path: Path) -> None:
+    scanner_dir = tmp_path / "semgrep-results"
+    scanner_dir.mkdir(parents=True)
+    (scanner_dir / "semgrep-results.json").write_text("not json at all")
+    findings = parse_semgrep(scanner_dir)
+    assert findings == []
+
+
+def test_parse_pip_audit_invalid_json(tmp_path: Path) -> None:
+    scanner_dir = tmp_path / "pip-audit-results"
+    scanner_dir.mkdir(parents=True)
+    (scanner_dir / "pip-audit-results.json").write_text("[invalid, json}")
+    findings = parse_pip_audit(scanner_dir)
+    assert findings == []
+
+
+def test_parse_trivy_invalid_json(tmp_path: Path) -> None:
+    scanner_dir = tmp_path / "trivy-results"
+    scanner_dir.mkdir(parents=True)
+    (scanner_dir / "trivy-results.json").write_text("{ broken }")
+    findings = parse_trivy(scanner_dir)
+    assert findings == []
+
+
+def test_parse_gitleaks_invalid_json(tmp_path: Path) -> None:
+    scanner_dir = tmp_path / "gitleaks-results"
+    scanner_dir.mkdir(parents=True)
+    (scanner_dir / "gitleaks-results.json").write_text('{"bad": }')
+    findings = parse_gitleaks(scanner_dir)
+    assert findings == []

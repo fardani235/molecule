@@ -30,7 +30,11 @@ def parse_bandit(path: Path) -> list[dict[str, str]]:
     json_file = path / "bandit-results.json"
     if not json_file.exists():
         return findings
-    data = json.loads(json_file.read_text())
+    try:
+        data = json.loads(json_file.read_text())
+    except json.JSONDecodeError as e:
+        print(f"Warning: Failed to parse Bandit JSON: {e}", file=sys.stderr)
+        return findings
     for result in data.get("results", []):
         severity = result.get("issue_severity", "").upper()
         if severity in SEVERITY_GATE:
@@ -49,7 +53,11 @@ def parse_semgrep(path: Path) -> list[dict[str, str]]:
     json_file = path / "semgrep-results.json"
     if not json_file.exists():
         return findings
-    data = json.loads(json_file.read_text())
+    try:
+        data = json.loads(json_file.read_text())
+    except json.JSONDecodeError as e:
+        print(f"Warning: Failed to parse Semgrep JSON: {e}", file=sys.stderr)
+        return findings
     for result in data.get("results", []):
         # Semgrep uses INFO/WARNING/ERROR — map to our severity scale
         raw_severity = result.get("extra", {}).get("severity", "").upper()
@@ -71,7 +79,11 @@ def parse_pip_audit(path: Path) -> list[dict[str, str]]:
     json_file = path / "pip-audit-results.json"
     if not json_file.exists():
         return findings
-    data = json.loads(json_file.read_text())
+    try:
+        data = json.loads(json_file.read_text())
+    except json.JSONDecodeError as e:
+        print(f"Warning: Failed to parse pip-audit JSON: {e}", file=sys.stderr)
+        return findings
     # pip-audit JSON is a list of dependency objects
     deps = data if isinstance(data, list) else data.get("dependencies", [])
     for dep in deps:
@@ -95,7 +107,11 @@ def parse_trivy(path: Path) -> list[dict[str, str]]:
     json_file = path / "trivy-results.json"
     if not json_file.exists():
         return findings
-    data = json.loads(json_file.read_text())
+    try:
+        data = json.loads(json_file.read_text())
+    except json.JSONDecodeError as e:
+        print(f"Warning: Failed to parse Trivy JSON: {e}", file=sys.stderr)
+        return findings
     for result_block in data.get("Results", []):
         for vuln in result_block.get("Vulnerabilities", []):
             severity = vuln.get("Severity", "").upper()
@@ -118,7 +134,11 @@ def parse_gitleaks(path: Path) -> list[dict[str, str]]:
     text = json_file.read_text().strip()
     if not text:
         return findings
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        print(f"Warning: Failed to parse Gitleaks JSON: {e}", file=sys.stderr)
+        return findings
     # Gitleaks JSON is a list of leak objects
     leaks = data if isinstance(data, list) else []
     for leak in leaks:
