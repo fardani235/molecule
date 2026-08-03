@@ -1,0 +1,7 @@
+---
+# Rulesets applied by the semgrep job. Modify by editing this file only,
+# never by changing the workflow.
+rulesets:
+  - p/ci
+  - p/python
+  - p/owasp-top-ten

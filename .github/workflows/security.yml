@@ -62,3 +62,40 @@ jobs:
           path: |
             bandit.sarif
             bandit.json
+
+  semgrep:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: semgrep/semgrep:1.86.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan \
+            --config p/ci \
+            --config p/python \
+            --config p/owasp-top-ten \
+            --sarif --output semgrep.sarif \
+            --error --no-fail-on-findings src/
+        continue-on-error: false
+        env:
+          SEMGREP_SEND_METRICS: "off"
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-semgrep
+          path: semgrep.sarif
