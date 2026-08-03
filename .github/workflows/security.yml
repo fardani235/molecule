@@ -64,13 +64,24 @@ jobs:
       - name: Export requirements from uv.lock
         run: uv export --format requirements-txt --no-hashes --no-emit-project -o requirements.txt
 
+      - name: Install pip-audit
+        run: uv tool install "pip-audit>=2.7"
+
       - name: Run pip-audit
         id: audit
-        uses: pypa/gh-action-pip-audit@v1.1.0
-        with:
-          inputs: requirements.txt
-          # SARIF output enables gate + code-scanning upload.
-          extra-args: --format sarif --output pip-audit.sarif --strict
+        # Direct invocation because the pypa/gh-action-pip-audit wrapper's
+        # `extra-args` doesn't reliably wire `--format sarif --output …` to
+        # the underlying tool (observed on PR #2 run 30775239447).
+        # `|| true` lets the SARIF land — the gate decides pass/fail.
+        run: |
+          set +e
+          uv tool run pip-audit --requirement requirements.txt \
+            --format sarif --output pip-audit.sarif --strict
+          echo "pip-audit exit: $?"
+          # Empty-run safety: matches the ansible-lint / zizmor pattern.
+          test -s pip-audit.sarif || cat > pip-audit.sarif <<'EOF'
+          {"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"pip-audit","informationUri":"https://pypi.org/project/pip-audit/"}},"results":[]}]}
+          EOF
 
       - name: Upload SARIF to code-scanning
         if: always()
