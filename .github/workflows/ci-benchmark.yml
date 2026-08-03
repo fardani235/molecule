@@ -1,0 +1,45 @@
+---
+name: ci-benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch_before:
+        description: Branch to sample "before" timings from
+        required: true
+        default: main
+      branch_after:
+        description: Branch to sample "after" timings from
+        required: true
+        default: devsecops-ci
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  bench:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute measurements
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_BEFORE: ${{ inputs.branch_before }}
+          BRANCH_AFTER: ${{ inputs.branch_after }}
+        run: |
+          python3 docs/devsecops/bench.py \
+            --workflow security.yml \
+            --workflow tox.yml \
+            --branch-before "$BRANCH_BEFORE" \
+            --branch-after "$BRANCH_AFTER" \
+            --output MEASUREMENTS.md
+          cat MEASUREMENTS.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload measurements artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-timing-report
+          path: MEASUREMENTS.md
