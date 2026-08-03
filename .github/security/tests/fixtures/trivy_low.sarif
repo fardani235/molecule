@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [{
+    "tool": {"driver": {"name": "Trivy"}},
+    "results": [{
+      "ruleId": "CVE-2020-0001",
+      "level": "note",
+      "message": {"text": "Low severity CVE"},
+      "properties": {"security-severity": "2.0"},
+      "locations": [{"physicalLocation": {"artifactLocation": {"uri": "requirements.txt"}}}]
+    }]
+  }]
+}
