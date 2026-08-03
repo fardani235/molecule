@@ -99,3 +99,55 @@ jobs:
         with:
           name: sarif-semgrep
           path: semgrep.sarif
+
+  pip-audit:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cache
+        with:
+          python-version: "3.13"
+
+      - name: Export locked requirements
+        run: |
+          uv export --frozen --all-extras --no-hashes \
+            --output-file requirements-audit.txt
+
+      - name: Install pip-audit
+        run: uv tool install "pip-audit==2.7.3"
+
+      - name: Run pip-audit (SARIF)
+        run: |
+          set +e
+          pip-audit --requirement requirements-audit.txt \
+            --format sarif --output pip-audit.sarif
+          rc=$?
+          # pip-audit exits 1 on findings — do not fail the job.
+          [ $rc -le 1 ] || exit $rc
+
+      - name: Run pip-audit (JSON, for debugging)
+        run: |
+          pip-audit --requirement requirements-audit.txt \
+            --format json --output pip-audit.json || true
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pip-audit.sarif
+          category: pip-audit
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-pip-audit
+          path: |
+            pip-audit.sarif
+            pip-audit.json
+            requirements-audit.txt
