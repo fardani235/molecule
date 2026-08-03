@@ -1,0 +1,357 @@
+---
+name: security
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "releases/**"
+      - "stable/**"
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bandit:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cache
+        with:
+          python-version: "3.13"
+
+      - name: Install Bandit
+        run: uv tool install "bandit[sarif]==1.7.10"
+
+      - name: Run Bandit
+        run: |
+          set +e
+          bandit -c .github/security/bandit.yaml -r src -f sarif -o bandit.sarif
+          rc=$?
+          # Bandit exits 1 when findings are present. We don't fail here.
+          [ $rc -le 1 ] || exit $rc
+          bandit -c .github/security/bandit.yaml -r src -f json -o bandit.json || true
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-bandit
+          path: |
+            bandit.sarif
+            bandit.json
+
+  semgrep:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: semgrep/semgrep:1.86.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        # Semgrep CLI has no --no-fail-on-findings flag; findings exit 1,
+        # actual errors exit 2+. Mirror the pattern used by bandit/pip-audit.
+        run: |
+          set +e
+          semgrep scan \
+            --config p/ci \
+            --config p/python \
+            --config p/owasp-top-ten \
+            --sarif --output semgrep.sarif \
+            --disable-version-check --metrics=off \
+            src/
+          rc=$?
+          [ $rc -le 1 ] || exit $rc
+        env:
+          SEMGREP_SEND_METRICS: "off"
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-semgrep
+          path: semgrep.sarif
+
+  pip-audit:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cache
+        with:
+          python-version: "3.13"
+
+      - name: Export locked requirements
+        run: |
+          uv export --frozen --all-extras --no-hashes \
+            --output-file requirements-audit.txt
+
+      - name: Install pip-audit
+        run: uv tool install "pip-audit==2.7.3"
+
+      - name: Run pip-audit (JSON)
+        # pip-audit has no native SARIF output. Emit JSON and convert below.
+        run: |
+          set +e
+          pip-audit --requirement requirements-audit.txt \
+            --format json --output pip-audit.json
+          rc=$?
+          # pip-audit exits 1 on findings — do not fail the job.
+          [ $rc -le 1 ] || exit $rc
+          # Ensure a file exists on success-with-no-vulns too.
+          [ -f pip-audit.json ] || echo '{"dependencies": []}' > pip-audit.json
+
+      - name: Convert pip-audit JSON to SARIF
+        # Small converter — no third-party dep required.
+        run: |
+          python3 <<'PY'
+          import json, pathlib
+          data = json.loads(pathlib.Path("pip-audit.json").read_text())
+          results = []
+          for dep in data.get("dependencies", []):
+              name = dep.get("name", "unknown")
+              version = dep.get("version", "unknown")
+              for vuln in dep.get("vulns", []) or []:
+                  vid = vuln.get("id", "PYSEC-UNKNOWN")
+                  # pip-audit doesn't ship CVSS scores; treat every vuln as High
+                  # so the gate blocks. If future pip-audit versions expose a
+                  # score, wire it into `properties.security-severity`.
+                  aliases = vuln.get("aliases") or []
+                  desc = vuln.get("description", "") or ""
+                  results.append({
+                      "ruleId": vid,
+                      "level": "error",
+                      "message": {"text": f"{name} {version}: {desc[:400]}"},
+                      "properties": {
+                          "security-severity": "7.5",
+                          "aliases": aliases,
+                      },
+                      "locations": [{
+                          "physicalLocation": {
+                              "artifactLocation": {"uri": "requirements-audit.txt"},
+                          },
+                      }],
+                  })
+          sarif = {
+              "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+              "version": "2.1.0",
+              "runs": [{
+                  "tool": {"driver": {"name": "pip-audit", "informationUri": "https://pypi.org/project/pip-audit/"}},
+                  "results": results,
+              }],
+          }
+          pathlib.Path("pip-audit.sarif").write_text(json.dumps(sarif, indent=2))
+          print(f"wrote pip-audit.sarif with {len(results)} finding(s)")
+          PY
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pip-audit.sarif
+          category: pip-audit
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-pip-audit
+          path: |
+            pip-audit.sarif
+            pip-audit.json
+            requirements-audit.txt
+
+  gitleaks:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history is REQUIRED — gitleaks-action computes a commit range
+          # against the PR base and needs both ends fetched. A shallow clone
+          # produces the "unknown revision" error and gitleaks falls back to
+          # a partial scan of 0 bytes, silently reporting "no leaks".
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .github/security/gitleaks.toml
+          # gitleaks-action exits 1 when leaks are found — that's a finding, not
+          # a crash. We accept exit 1 (findings) but propagate anything else via
+          # the shell wrapper on the step below. gate.py owns the block decision.
+          GITLEAKS_NOTIFY_USER_LIST: ""
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_SUMMARY: "true"
+        continue-on-error: true
+
+      - name: Locate SARIF output
+        # gitleaks-action writes results.sarif on ANY successful scan (empty
+        # results = 0 findings). A missing file means the scan itself failed
+        # (auth issue, git-range error, container crash). In that case we
+        # emit an empty SARIF so downstream jobs don't hang, but ALSO fail
+        # this step so the whole job goes red — silent green from a broken
+        # scanner is the exact bug that hid gitleaks' partial-scan issue.
+        run: |
+          if [ -f results.sarif ]; then
+            mv results.sarif gitleaks.sarif
+            exit 0
+          fi
+          echo "::error::gitleaks did not emit results.sarif — scan likely failed"
+          cat > gitleaks.sarif <<'EOF'
+          {"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Gitleaks"}},"results":[]}]}
+          EOF
+          exit 1
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-gitleaks
+          path: gitleaks.sarif
+
+  trivy:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cache
+        with:
+          python-version: "3.13"
+          cache-scanner-db: "true"
+
+      - name: Run Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,misconfig,secret
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN
+          exit-code: "0"
+          cache-dir: ~/.cache/trivy
+
+      - name: Generate SBOM (SPDX)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          format: spdx-json
+          output: sbom.spdx.json
+          exit-code: "0"
+          cache-dir: ~/.cache/trivy
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+
+      - name: Upload Trivy artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-trivy
+          path: trivy.sarif
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  security-gate:
+    if: github.repository == 'fardani235/molecule' && always()
+    needs: [bandit, semgrep, pip-audit, gitleaks, trivy]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      # Rollout: start in warn mode, flip to 'enforce' after Task 11.
+      GATE_MODE: warn
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cache
+        with:
+          python-version: "3.13"
+
+      - name: Install PyYAML
+        run: uv pip install --system pyyaml
+
+      - name: Download all scanner artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: sarif-in
+          pattern: sarif-*
+          merge-multiple: false
+
+      - name: Run gate.py
+        id: gate
+        run: |
+          python .github/security/gate.py \
+            sarif-in/**/*.sarif \
+            --waivers .github/security/waivers.yaml \
+            --mode "$GATE_MODE" \
+            --output report.json \
+            ${{ github.event_name == 'schedule' && '--scheduled' || '' }}
+
+      - name: Upload consolidated report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: report.json

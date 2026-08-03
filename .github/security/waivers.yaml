@@ -1,0 +1,14 @@
+---
+# Waived security findings.
+#
+# Each entry must have: id, reason, added_by, added_on, expires_on.
+# On scheduled runs, expired waivers fail the gate so waivers cannot rot.
+#
+# id formats:
+#   - CVE-YYYY-NNNNN          (dep vulns from pip-audit/trivy)
+#   - bandit:BXXX             (bandit rule ids)
+#   - semgrep:<rule-id>       (semgrep rule ids)
+#   - trivy:<check-id>        (trivy misconfig ids)
+#   - gitleaks:<rule-id>      (gitleaks rule ids)
+
+waivers: []

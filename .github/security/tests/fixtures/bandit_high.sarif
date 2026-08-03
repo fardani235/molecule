@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [{
+    "tool": {"driver": {"name": "Bandit"}},
+    "results": [{
+      "ruleId": "B301",
+      "level": "error",
+      "message": {"text": "Pickle usage"},
+      "properties": {"security-severity": "8.0"},
+      "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/example.py"}, "region": {"startLine": 10}}}]
+    }]
+  }]
+}

@@ -1,0 +1,14 @@
+# Gitleaks config for the molecule fork.
+# Extends the default ruleset and only adds allowlists for known
+# false-positives in test fixtures.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-fake credentials in test fixtures"
+paths = [
+    '''tests/fixtures/.*''',
+    '''src/molecule/test/.*''',
+    '''community\.molecule/.*/tests/.*''',
+]
