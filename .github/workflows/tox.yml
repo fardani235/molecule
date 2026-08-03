@@ -22,7 +22,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cache-warm:
+    name: "Warm CI Caches"
+    if: github.repository != 'ansible-community/molecule'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup CI caches
+        uses: ./.github/actions/setup-cache
+        with:
+          cache-uv: "true"
+          cache-tox: "true"
+          cache-pre-commit: "true"
+
   tox:
+    needs: [cache-warm]
+    if: always()
     uses: ansible/team-devtools/.github/workflows/tox.yml@main
     secrets: inherit
     with:

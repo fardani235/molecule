@@ -1,0 +1,47 @@
+---
+name: "Setup CI Caches"
+description: "Restore uv, tox, and pre-commit caches to speed up CI runs"
+
+inputs:
+  cache-uv:
+    description: "Cache uv package downloads (~/.cache/uv)"
+    required: false
+    default: "true"
+  cache-tox:
+    description: "Cache tox virtual environments (.tox/)"
+    required: false
+    default: "true"
+  cache-pre-commit:
+    description: "Cache pre-commit hook environments (~/.cache/pre-commit)"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Cache uv downloads
+      if: inputs.cache-uv == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+
+    - name: Cache tox environments
+      if: inputs.cache-tox == 'true'
+      uses: actions/cache@v4
+      with:
+        path: .tox
+        key: ${{ runner.os }}-tox-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-tox-
+
+    - name: Cache pre-commit environments
+      if: inputs.cache-pre-commit == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pre-commit
+        key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pre-commit-

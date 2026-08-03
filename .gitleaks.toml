@@ -1,0 +1,13 @@
+# Gitleaks configuration
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Molecule-specific allowlist"
+paths = [
+  '''uv\.lock''',
+  '''\.ansible/''',
+  '''\.tox/''',
+]

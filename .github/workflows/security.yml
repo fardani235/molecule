@@ -1,0 +1,242 @@
+---
+name: security
+
+on:
+  pull_request:
+    branches:
+      - "main"
+      - "releases/**"
+      - "stable/**"
+  push:
+    branches:
+      - "main"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sast:
+    name: "SAST (Bandit + Semgrep)"
+    if: github.repository != 'ansible-community/molecule'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Bandit
+        run: python3 -m pip install --user bandit[toml]
+
+      - name: Run Bandit (JSON)
+        run: |
+          python3 -m bandit -c .bandit.yml -r src/ \
+            -ll \
+            -f json -o bandit-results.json \
+            || true
+
+      - name: Run Bandit (SARIF)
+        run: |
+          python3 -m bandit -c .bandit.yml -r src/ \
+            -ll \
+            -f sarif -o bandit-results.sarif \
+            || true
+
+      - name: Upload Bandit SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+        continue-on-error: true
+
+      - name: Upload Bandit results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-results
+          path: |
+            bandit-results.json
+            bandit-results.sarif
+          retention-days: 90
+
+      - name: Install Semgrep
+        run: python3 -m pip install --user semgrep
+
+      - name: Run Semgrep
+        run: |
+          semgrep scan \
+            --config p/python \
+            --config p/security-audit \
+            --json --output semgrep-results.json \
+            --sarif --sarif-output semgrep-results.sarif \
+            src/ \
+            || true
+
+      - name: Upload Semgrep SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep
+        continue-on-error: true
+
+      - name: Upload Semgrep results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-results
+          path: |
+            semgrep-results.json
+            semgrep-results.sarif
+          retention-days: 90
+
+  dependency-scan:
+    name: "Dependency Scan (pip-audit + Trivy)"
+    if: github.repository != 'ansible-community/molecule'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Export requirements from uv.lock
+        run: uv export --format requirements-txt --no-hashes > requirements.txt
+
+      - name: Install pip-audit
+        run: python3 -m pip install --user pip-audit
+
+      - name: Run pip-audit
+        run: |
+          python3 -m pip_audit \
+            -r requirements.txt \
+            --format json \
+            --output pip-audit-results.json \
+            || true
+
+      - name: Upload pip-audit results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-results
+          path: pip-audit-results.json
+          retention-days: 90
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "json"
+          output: "trivy-results.json"
+          severity: "MEDIUM,HIGH,CRITICAL"
+
+      - name: Run Trivy SARIF scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "MEDIUM,HIGH,CRITICAL"
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+        continue-on-error: true
+
+      - name: Upload Trivy results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-results
+          path: |
+            trivy-results.json
+            trivy-results.sarif
+          retention-days: 90
+
+  secrets:
+    name: "Secrets Detection (Gitleaks)"
+    if: github.repository != 'ansible-community/molecule'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: --config .gitleaks.toml --report-format json --report-path gitleaks-results.json
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+      - name: Run Gitleaks SARIF
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: --config .gitleaks.toml --report-format sarif --report-path gitleaks-results.sarif
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+      - name: Upload Gitleaks SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gitleaks-results.sarif
+          category: gitleaks
+        continue-on-error: true
+
+      - name: Upload Gitleaks results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitleaks-results
+          path: |
+            gitleaks-results.json
+            gitleaks-results.sarif
+          retention-days: 90
+
+  security-gate:
+    name: "Security Gate"
+    if: github.repository != 'ansible-community/molecule'
+    needs: [sast, dependency-scan, secrets]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-artifacts
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run security gate
+        run: python3 .github/scripts/security_gate.py scan-artifacts
