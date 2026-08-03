@@ -262,7 +262,7 @@ jobs:
           cache-scanner-db: "true"
 
       - name: Run Trivy filesystem scan (SARIF)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scanners: vuln,misconfig,secret
@@ -273,7 +273,7 @@ jobs:
           cache-dir: ~/.cache/trivy
 
       - name: Generate SBOM (SPDX)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           format: spdx-json
