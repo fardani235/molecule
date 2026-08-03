@@ -200,3 +200,58 @@ jobs:
         with:
           name: sarif-gitleaks
           path: gitleaks.sarif
+
+  trivy:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cache
+        with:
+          python-version: "3.13"
+          cache-scanner-db: "true"
+
+      - name: Run Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scanners: vuln,misconfig,secret
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN
+          exit-code: "0"
+          cache-dir: ~/.cache/trivy
+
+      - name: Generate SBOM (SPDX)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          format: spdx-json
+          output: sbom.spdx.json
+          exit-code: "0"
+          cache-dir: ~/.cache/trivy
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+
+      - name: Upload Trivy artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-trivy
+          path: trivy.sarif
+
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
