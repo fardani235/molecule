@@ -22,20 +22,66 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  warm-cache:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Prime tox env cache
+        uses: actions/cache@v4
+        with:
+          path: .tox
+          key: tox-${{ runner.os }}-py3-${{ hashFiles('pyproject.toml','tox.ini') }}
+          restore-keys: |
+            tox-${{ runner.os }}-py3-
+
+      - name: Prime pre-commit cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: precommit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: precommit-
+
+      - name: Materialize uv env
+        run: |
+          uv sync --frozen --no-install-project
+
+      - name: Warm pre-commit hooks
+        run: |
+          python3 -m pip install --user pre-commit
+          "$HOME/.local/bin/pre-commit" install-hooks || true
+
+      - name: Prime Podman container-storage cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/containers/storage
+          key: podman-${{ hashFiles('tests/fixtures/**/Dockerfile*', 'tests/fixtures/**/containerfile*') }}
+          restore-keys: podman-
+
+      # CodeQL DB caching is handled inside github/codeql-action/init@v3
+      # (see security.yml, Task 2). Nothing to prime here.
+
   tox:
+    # When the guard passes, gate on warm-cache. Upstream forks skip
+    # warm-cache; `needs` on a skipped job would block them, so we do
+    # NOT add `needs` here — the reusable workflow simply misses the
+    # warmed cache on non-fork runs, which is the existing behaviour.
     uses: ansible/team-devtools/.github/workflows/tox.yml@main
     secrets: inherit
     with:
-      default_python: "3.10" # for lint
+      default_python: "3.10"
       max_python: "3.13"
       jobs_producing_coverage: 8
       other_names_also: |
         collection
         eco
-      # Temporary: ubuntu-24.04 image 20260726.254 ships Podman 5.8.4 but leaves
-      # Podman pointed at /usr/bin/crun 1.14.1 while /usr/local/bin/crun 1.28 exists.
-      # Promote into team-devtools tox.yml if this unblocks Linux integration tests.
-      # See https://github.com/actions/runner-images/issues/14473
       run_pre: |
         set -euxo pipefail
         if [[ "$(uname -s)" == Linux && -x /usr/local/bin/crun ]]; then

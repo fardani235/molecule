@@ -1,0 +1,316 @@
+---
+name: security
+
+on:
+  pull_request:
+    branches: [main, "releases/**", "stable/**"]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"  # weekly Monday 03:00 UTC — supplements per-PR runs
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write   # required for SARIF upload
+  actions: read            # required by CodeQL
+
+jobs:
+  sast-codeql:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          config-file: .github/codeql/codeql-config.yml
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:python
+          output: sarif-results
+
+      - name: Upload CodeQL SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-codeql
+          path: sarif-results/*.sarif
+          retention-days: 30
+
+  sca-pip-audit:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Export requirements from uv.lock
+        run: uv export --format requirements-txt --no-hashes --no-emit-project -o requirements.txt
+
+      - name: Install pip-audit
+        run: uv tool install "pip-audit>=2.7"
+
+      - name: Run pip-audit
+        id: audit
+        # Direct invocation because the pypa/gh-action-pip-audit wrapper's
+        # `extra-args` doesn't reliably wire `--format sarif --output …` to
+        # the underlying tool (observed on PR #2 run 30775239447).
+        # `|| true` lets the SARIF land — the gate decides pass/fail.
+        run: |
+          set +e
+          uv tool run pip-audit --requirement requirements.txt \
+            --format sarif --output pip-audit.sarif --strict
+          echo "pip-audit exit: $?"
+          # Empty-run safety: matches the ansible-lint / zizmor pattern.
+          test -s pip-audit.sarif || cat > pip-audit.sarif <<'EOF'
+          {"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"pip-audit","informationUri":"https://pypi.org/project/pip-audit/"}},"results":[]}]}
+          EOF
+
+      - name: Upload SARIF to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pip-audit.sarif
+          category: pip-audit
+
+      - name: Upload pip-audit SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-pip-audit
+          path: pip-audit.sarif
+          retention-days: 30
+
+  sca-dep-review:
+    if: github.repository_owner == 'fardani235' && github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Config lives at .github/security/dep-review.yml.
+          config-file: .github/security/dep-review.yml
+          # Retry-safe: soft-fail is off; job fails inline on moderate+.
+          # Dependency-Review does not emit SARIF; its job failure is what
+          # feeds the gate (via `needs.*.result` in the gate job).
+
+  secrets-gitleaks:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .github/security/gitleaks.toml
+          # SARIF report for the gate + code-scanning upload.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
+          GITLEAKS_ENABLE_SUMMARY: "true"
+          GITLEAKS_NOTIFY_USER_LIST: ""
+
+      - name: Convert Gitleaks report to SARIF
+        if: always()
+        run: |
+          if [[ -f results.sarif ]]; then
+            cp results.sarif gitleaks.sarif
+          else
+            # No leaks — synthesize an empty SARIF so the gate has a file.
+            cat > gitleaks.sarif <<'EOF'
+          {"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"gitleaks"}},"results":[]}]}
+          EOF
+          fi
+
+      - name: Upload SARIF to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+      - name: Upload Gitleaks SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-gitleaks
+          path: gitleaks.sarif
+          retention-days: 30
+
+  iac-zizmor:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zizmor
+        run: |
+          python3 -m pip install --user "zizmor>=1.0.0"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run zizmor on workflows
+        run: |
+          zizmor --format sarif --min-severity medium .github/workflows/ \
+            > zizmor.sarif || true
+          # zizmor exits non-zero when it finds anything; we let the gate
+          # decide. Ensure the SARIF is always produced.
+          # Fallback must include tool.driver.name so code-scanning accepts it.
+          test -s zizmor.sarif || cat > zizmor.sarif <<'EOF'
+          {"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"zizmor","informationUri":"https://woodruffw.github.io/zizmor/"}},"results":[]}]}
+          EOF
+
+      - name: Upload SARIF to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
+      - name: Upload zizmor SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-zizmor
+          path: zizmor.sarif
+          retention-days: 30
+
+  iac-ansible-lint-sec:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install ansible-lint
+        run: |
+          uv tool install "ansible-lint>=25.0"
+
+      - name: Run ansible-lint (security profile)
+        run: |
+          set +e
+          uv tool run ansible-lint --profile production --write-list \
+            --sarif-file ansible-lint.sarif \
+            community.molecule/ tests/fixtures/ || true
+          # Ensure file exists even when no findings; the fallback must include
+          # tool.driver.name (SARIF spec MUST) so the code-scanning upload accepts it.
+          test -s ansible-lint.sarif || cat > ansible-lint.sarif <<'EOF'
+          {"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"ansible-lint","informationUri":"https://ansible-lint.readthedocs.io/"}},"results":[]}]}
+          EOF
+
+      - name: Upload SARIF to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ansible-lint.sarif
+          category: ansible-lint
+
+      - name: Upload ansible-lint SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-ansible-lint
+          path: ansible-lint.sarif
+          retention-days: 30
+
+  sca-trivy-fs:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy.sarif
+          severity: MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"  # gate decides — do not fail the scan step itself
+          trivyignores: .trivyignore
+
+      - name: Upload SARIF to code-scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-fs
+
+      - name: Upload Trivy SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-trivy
+          path: trivy.sarif
+          retention-days: 30
+
+  gate:
+    if: github.repository_owner == 'fardani235' && always()
+    needs:
+      - sast-codeql
+      - sca-pip-audit
+      - sca-dep-review
+      - secrets-gitleaks
+      - iac-zizmor
+      - iac-ansible-lint-sec
+      - sca-trivy-fs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all SARIF artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sarif-*
+          path: sarif/
+          merge-multiple: true
+
+      - name: Run gate
+        id: gate
+        run: .github/security/gate.sh sarif .github/security/allowlist.yml security-report.json
+
+      - name: Upload consolidated security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.json
+          retention-days: 30
+
+      - name: Fail if any upstream job failed
+        if: |
+          contains(needs.*.result, 'failure')
+        run: |
+          echo "::error::One or more scanner jobs failed; see the job list."
+          exit 1

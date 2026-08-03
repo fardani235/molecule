@@ -1,0 +1,5 @@
+fail-on-severity: moderate
+fail-on-scopes:
+  - runtime
+  - development
+comment-summary-in-pr: on-failure

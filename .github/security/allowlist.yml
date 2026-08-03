@@ -1,0 +1,4 @@
+# Suppressions for security scanners. Every entry MUST include an
+# `expires` date; the gate job fails when any entry is past due.
+# Tool values: codeql | pip-audit | gitleaks | trivy | zizmor | ansible-lint
+suppressions: []

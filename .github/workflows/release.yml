@@ -14,6 +14,10 @@ on:
         type: boolean
         description: Publish on pypi.org
         default: false
+      override_gate:
+        type: boolean
+        description: "Fork-only: skip Trivy gate on built dists (release env approver required)"
+        default: false
 jobs:
   release:
     if: "${{ github.event_name == 'release' || inputs.pypi_publish }}"
@@ -43,8 +47,46 @@ jobs:
       - name: Build dists
         run: python3 -m tox -e pkg
 
+      - name: Generate CycloneDX SBOM
+        if: github.repository_owner == 'fardani235'
+        uses: anchore/sbom-action@v0
+        with:
+          artifact-name: bom.cdx.json
+          format: cyclonedx-json
+          output-file: bom.cdx.json
+          path: dist/
+
+      - name: Generate SPDX SBOM
+        if: github.repository_owner == 'fardani235'
+        uses: anchore/sbom-action@v0
+        with:
+          artifact-name: bom.spdx.json
+          format: spdx-json
+          output-file: bom.spdx.json
+          path: dist/
+
+      - name: Upload SBOMs as workflow artifacts
+        if: github.repository_owner == 'fardani235'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            bom.cdx.json
+            bom.spdx.json
+          retention-days: 30
+
+      - name: Attach SBOMs to the GitHub Release
+        if: github.repository_owner == 'fardani235' && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            bom.cdx.json bom.spdx.json --clobber
+
       - name: Publish to pypi.org
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
 
   publish-collection:
     if: "${{ github.event_name == 'release' || inputs.galaxy_publish }}"
@@ -77,3 +119,75 @@ jobs:
 
       - name: Run the forum post script
         run: python3 forum_post.py ${{ github.event.repository.full_name }} ${{ github.event.release.tag_name }} ${{ secrets.FORUM_KEY }} ${{ secrets.FORUM_USER }}
+
+  release-trivy-dists:
+    if: github.repository_owner == 'fardani235'
+    needs: release
+    runs-on: ubuntu-24.04
+    environment: release
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download built dists
+        uses: actions/download-artifact@v4
+        with:
+          # `pypa/gh-action-pypi-publish` uploads dists in `dist/`; we re-fetch
+          # via the release-artifacts helper below.
+          pattern: sbom
+          path: sbom/
+          merge-multiple: true
+
+      - name: Download release dists from tag
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ github.event.release.tag_name }}" \
+            --pattern '*.whl' --pattern '*.tar.gz' --dir dist
+
+      - name: Check dist contents
+        id: dist_present
+        run: |
+          if [[ -d dist && -n "$(ls -A dist 2>/dev/null)" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No dist/ artifacts present (workflow_dispatch without a release); Trivy dist gate soft-skipped."
+          fi
+
+      - name: Trivy scan of built dists
+        id: trivy
+        if: steps.dist_present.outputs.present == 'true'
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: fs
+          scan-ref: dist
+          format: sarif
+          output: trivy-dists.sarif
+          severity: MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+        continue-on-error: ${{ inputs.override_gate == true }}
+
+      - name: Upload SARIF to code-scanning
+        if: steps.dist_present.outputs.present == 'true'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-dists.sarif
+          category: trivy-dists
+
+      - name: Upload Trivy dist SARIF artifact
+        if: steps.dist_present.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-trivy-dists
+          path: trivy-dists.sarif
+          retention-days: 30
+
+      - name: Record override, if used
+        if: inputs.override_gate == true
+        run: |
+          echo "::warning::Release Trivy gate overridden by ${{ github.actor }}"

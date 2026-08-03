@@ -1,0 +1,53 @@
+---
+name: ci-metrics
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"   # Monday 04:00 UTC — one hour after security scan
+  workflow_dispatch:
+
+permissions:
+  contents: write        # for the drift-PR branch
+  pull-requests: write   # for peter-evans/create-pull-request
+  actions: read          # to list workflow runs
+
+jobs:
+  measure:
+    if: github.repository_owner == 'fardani235'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch last 20 successful tox runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run list --workflow=tox.yml --status=success \
+            --json databaseId,createdAt,updatedAt \
+            --limit 20 > runs.json
+          test -s runs.json
+
+      - name: Append metric row
+        run: python3 .github/security/measure.py < runs.json
+
+      - name: Upload metric artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-speed-report
+          path: docs/superpowers/ci-speed-report.md
+          retention-days: 30
+
+      - name: Open PR if the file changed
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/ci-metrics-update
+          commit-message: "chore(ci): update CI speed report"
+          title: "chore(ci): update CI speed report"
+          body: |
+            Automated update by `.github/workflows/ci-metrics.yml`. Review the
+            newly appended row for regressions (>20 % median drift).
+          labels: |
+            ci
+            metrics
+          add-paths: docs/superpowers/ci-speed-report.md
