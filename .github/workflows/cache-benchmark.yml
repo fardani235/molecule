@@ -1,0 +1,142 @@
+---
+name: cache-benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark-no-cache:
+    name: "Benchmark: No Cache"
+    if: github.repository != 'ansible-community/molecule'
+    runs-on: ubuntu-24.04
+
+    env:
+      FORCE_COLOR: "1"
+      PY_COLORS: "1"
+
+    outputs:
+      duration: ${{ steps.timing.outputs.duration }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install tox
+        run: python3 -m pip install --user "tox>=4.46.0" "tox-uv>=1.32.1"
+
+      - name: Run tox lint (no cache) and measure time
+        id: timing
+        run: |
+          START=$(date +%s)
+          python3 -m tox -e lint || true
+          END=$(date +%s)
+          DURATION=$((END - START))
+          echo "duration=${DURATION}" >> "$GITHUB_OUTPUT"
+          echo "No-cache run took ${DURATION}s"
+
+  benchmark-with-cache:
+    name: "Benchmark: With Cache"
+    if: github.repository != 'ansible-community/molecule'
+    needs: benchmark-no-cache
+    runs-on: ubuntu-24.04
+
+    env:
+      FORCE_COLOR: "1"
+      PY_COLORS: "1"
+
+    outputs:
+      duration: ${{ steps.timing.outputs.duration }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup CI caches
+        uses: ./.github/actions/setup-cache
+        with:
+          cache-uv: "true"
+          cache-tox: "true"
+          cache-pre-commit: "true"
+
+      - name: Install tox
+        run: python3 -m pip install --user "tox>=4.46.0" "tox-uv>=1.32.1"
+
+      - name: Run tox lint (with cache) and measure time
+        id: timing
+        run: |
+          START=$(date +%s)
+          python3 -m tox -e lint || true
+          END=$(date +%s)
+          DURATION=$((END - START))
+          echo "duration=${DURATION}" >> "$GITHUB_OUTPUT"
+          echo "With-cache run took ${DURATION}s"
+
+  report:
+    name: "Benchmark Report"
+    if: github.repository != 'ansible-community/molecule'
+    needs: [benchmark-no-cache, benchmark-with-cache]
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Generate benchmark report
+        run: |
+          NO_CACHE=${{ needs.benchmark-no-cache.outputs.duration }}
+          WITH_CACHE=${{ needs.benchmark-with-cache.outputs.duration }}
+
+          if [ "$NO_CACHE" -gt 0 ]; then
+            DIFF=$((NO_CACHE - WITH_CACHE))
+            PERCENT=$(( (DIFF * 100) / NO_CACHE ))
+          else
+            DIFF=0
+            PERCENT=0
+          fi
+
+          cat > benchmark-report.md << 'HEADER'
+          # CI Cache Benchmark Report
+
+          ## Results
+
+          | Metric | No Cache | With Cache |
+          |--------|----------|------------|
+          HEADER
+
+          echo "| Duration | ${NO_CACHE}s | ${WITH_CACHE}s |" >> benchmark-report.md
+          echo "| **Improvement** | — | **${DIFF}s faster (${PERCENT}%)** |" >> benchmark-report.md
+          echo "" >> benchmark-report.md
+          echo "## Details" >> benchmark-report.md
+          echo "" >> benchmark-report.md
+          echo "- **Test command:** \`tox -e lint\`" >> benchmark-report.md
+          echo "- **Runner:** ubuntu-24.04" >> benchmark-report.md
+          echo "- **Caches enabled:** uv, tox, pre-commit" >> benchmark-report.md
+          echo "- **Cache key strategy:** primary key with fallback restore key" >> benchmark-report.md
+
+          cat benchmark-report.md
+
+      - name: Post to job summary
+        run: cat benchmark-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-benchmark-report
+          path: benchmark-report.md
+          retention-days: 90
