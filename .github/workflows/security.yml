@@ -207,31 +207,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history on push/schedule, shallow on PR (perf trade-off)
-          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+          # Full history is REQUIRED — gitleaks-action computes a commit range
+          # against the PR base and needs both ends fetched. A shallow clone
+          # produces the "unknown revision" error and gitleaks falls back to
+          # a partial scan of 0 bytes, silently reporting "no leaks".
+          fetch-depth: 0
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .github/security/gitleaks.toml
-          # Do not fail here; gate.py owns the decision.
+          # gitleaks-action exits 1 when leaks are found — that's a finding, not
+          # a crash. We accept exit 1 (findings) but propagate anything else via
+          # the shell wrapper on the step below. gate.py owns the block decision.
           GITLEAKS_NOTIFY_USER_LIST: ""
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
           GITLEAKS_ENABLE_SUMMARY: "true"
         continue-on-error: true
 
       - name: Locate SARIF output
+        # gitleaks-action writes results.sarif on ANY successful scan (empty
+        # results = 0 findings). A missing file means the scan itself failed
+        # (auth issue, git-range error, container crash). In that case we
+        # emit an empty SARIF so downstream jobs don't hang, but ALSO fail
+        # this step so the whole job goes red — silent green from a broken
+        # scanner is the exact bug that hid gitleaks' partial-scan issue.
         run: |
-          # gitleaks-action writes results.sarif in the workspace
           if [ -f results.sarif ]; then
             mv results.sarif gitleaks.sarif
-          else
-            # No output means no findings — emit an empty valid SARIF.
-            cat > gitleaks.sarif <<'EOF'
+            exit 0
+          fi
+          echo "::error::gitleaks did not emit results.sarif — scan likely failed"
+          cat > gitleaks.sarif <<'EOF'
           {"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Gitleaks"}},"results":[]}]}
           EOF
-          fi
+          exit 1
 
       - name: Upload SARIF to Code Scanning
         if: always()
