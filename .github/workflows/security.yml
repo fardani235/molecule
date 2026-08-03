@@ -216,3 +216,27 @@ jobs:
             gitleaks-results.json
             gitleaks-results.sarif
           retention-days: 90
+
+  security-gate:
+    name: "Security Gate"
+    if: github.repository != 'ansible-community/molecule'
+    needs: [sast, dependency-scan, secrets]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-artifacts
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run security gate
+        run: python3 .github/scripts/security_gate.py scan-artifacts
