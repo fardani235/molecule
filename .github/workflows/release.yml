@@ -160,7 +160,7 @@ jobs:
       - name: Trivy scan of built dists
         id: trivy
         if: steps.dist_present.outputs.present == 'true'
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: fs
           scan-ref: dist

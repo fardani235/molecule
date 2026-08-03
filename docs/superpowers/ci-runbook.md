@@ -9,8 +9,11 @@ Do these once per fork owner. All in the GitHub UI of `fardani235/molecule`.
 2. **Settings → Actions → General → Workflow permissions**: enable
    "Allow GitHub Actions to create and approve pull requests" (needed by
    `ci-metrics.yml` to open the metrics-update PR).
-3. **Settings → Code security and analysis**: enable Dependency graph,
-   Dependabot alerts, Secret scanning, Code scanning.
+3. **Settings → Code security and analysis** (`https://github.com/fardani235/molecule/settings/security_analysis`): enable
+   Dependency graph, Dependabot alerts, Secret scanning, Code scanning.
+   **This is required** — the `sca-dep-review` job WILL fail with
+   `Dependency review is not supported on this repository` until Dependency
+   graph is turned on.
 4. No secrets are required for the new workflows.
 
 ## Adding an allowlist entry
