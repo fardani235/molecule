@@ -1,0 +1,7 @@
+---
+# Bandit config. Excludes tests/fixtures (intentionally-vulnerable examples).
+skips: []
+exclude_dirs:
+  - tests
+  - src/molecule/test
+  - collections

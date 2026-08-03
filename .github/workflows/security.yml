@@ -1,0 +1,64 @@
+---
+name: security
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "releases/**"
+      - "stable/**"
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bandit:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cache
+        with:
+          python-version: "3.13"
+
+      - name: Install Bandit
+        run: uv tool install "bandit[sarif]==1.7.10"
+
+      - name: Run Bandit
+        run: |
+          set +e
+          bandit -c .github/security/bandit.yaml -r src -f sarif -o bandit.sarif
+          rc=$?
+          # Bandit exits 1 when findings are present. We don't fail here.
+          [ $rc -le 1 ] || exit $rc
+          bandit -c .github/security/bandit.yaml -r src -f json -o bandit.json || true
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-bandit
+          path: |
+            bandit.sarif
+            bandit.json
