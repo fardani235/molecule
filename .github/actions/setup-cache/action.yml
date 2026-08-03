@@ -1,0 +1,54 @@
+---
+name: setup-cache
+description: >-
+  Restore uv, pre-commit, and (optionally) Trivy DB caches, then set up Python
+  and uv. Used by every job in security.yml.
+
+inputs:
+  python-version:
+    description: Python version passed to actions/setup-python
+    required: false
+    default: "3.13"
+  cache-scanner-db:
+    description: Set to "true" to restore/save the Trivy DB cache.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python ${{ inputs.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "0.11.28"
+        enable-cache: false  # we own the cache below
+
+    - name: Restore uv cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/uv
+        key: uv-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('uv.lock') }}
+        restore-keys: |
+          uv-${{ runner.os }}-py${{ inputs.python-version }}-
+
+    - name: Restore pre-commit cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pre-commit
+        key: pc-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('.pre-commit-config.yaml') }}
+        restore-keys: |
+          pc-${{ runner.os }}-py${{ inputs.python-version }}-
+
+    - name: Restore Trivy DB cache
+      if: inputs.cache-scanner-db == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/trivy
+        key: trivy-db-${{ github.run_id }}
+        restore-keys: |
+          trivy-db-
