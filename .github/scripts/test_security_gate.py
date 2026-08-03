@@ -187,3 +187,30 @@ def test_parse_gitleaks_invalid_json(tmp_path: Path) -> None:
     (scanner_dir / "gitleaks-results.json").write_text('{"bad": }')
     findings = parse_gitleaks(scanner_dir)
     assert findings == []
+
+
+def test_parse_pip_audit_malformed_string(tmp_path: Path) -> None:
+    """Test parse_pip_audit with malformed output (plain string instead of list/dict)."""
+    scanner_dir = tmp_path / "pip-audit-results"
+    scanner_dir.mkdir(parents=True)
+    (scanner_dir / "pip-audit-results.json").write_text('"error occurred"')
+    findings = parse_pip_audit(scanner_dir)
+    assert findings == []
+
+
+def test_parse_pip_audit_malformed_int(tmp_path: Path) -> None:
+    """Test parse_pip_audit with malformed output (int instead of list/dict)."""
+    scanner_dir = tmp_path / "pip-audit-results"
+    scanner_dir.mkdir(parents=True)
+    (scanner_dir / "pip-audit-results.json").write_text("42")
+    findings = parse_pip_audit(scanner_dir)
+    assert findings == []
+
+
+def test_parse_pip_audit_malformed_null(tmp_path: Path) -> None:
+    """Test parse_pip_audit with malformed output (null instead of list/dict)."""
+    scanner_dir = tmp_path / "pip-audit-results"
+    scanner_dir.mkdir(parents=True)
+    (scanner_dir / "pip-audit-results.json").write_text("null")
+    findings = parse_pip_audit(scanner_dir)
+    assert findings == []

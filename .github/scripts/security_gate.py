@@ -85,7 +85,14 @@ def parse_pip_audit(path: Path) -> list[dict[str, str]]:
         print(f"Warning: Failed to parse pip-audit JSON: {e}", file=sys.stderr)
         return findings
     # pip-audit JSON is a list of dependency objects
-    deps = data if isinstance(data, list) else data.get("dependencies", [])
+    if isinstance(data, list):
+        deps = data
+    elif isinstance(data, dict):
+        deps = data.get("dependencies", [])
+    else:
+        # data is neither list nor dict (e.g., string, int, None)
+        print(f"Warning: Unexpected type from pip-audit JSON: {type(data).__name__}", file=sys.stderr)
+        return findings
     for dep in deps:
         for vuln in dep.get("vulns", []):
             # pip-audit doesn't always include severity; treat all vulns as HIGH
