@@ -117,3 +117,21 @@ repos:
     rev: v26.4.0
     hooks:
       - id: check-platform-constraints
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        args:
+          - "--config=.github/security/.gitleaks.toml"
+  - repo: https://github.com/PyCQA/bandit
+    rev: "1.8.0"
+    hooks:
+      - id: bandit
+        name: bandit (src/ only)
+        args:
+          - "-r"
+          - "src"
+          - "-c"
+          - ".github/security/bandit.yaml"
+        files: ^src/
+        pass_filenames: false
