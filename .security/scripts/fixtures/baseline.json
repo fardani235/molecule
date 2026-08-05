@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-08-05",
+  "workflows": {
+    "security.yml": {"cold_total_s": 582, "warm_total_s_estimate": 210},
+    "tox.yml": {"avg_total_s": 850, "samples": 5}
+  }
+}
