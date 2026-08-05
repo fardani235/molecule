@@ -162,3 +162,103 @@ jobs:
             echo "| Target | src/ |"
             echo "| Severity | MEDIUM+ |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  pip-audit:
+    name: pip-audit Dependency Scan
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Install project dependencies
+        run: pip install .
+
+      - name: Run pip-audit
+        run: |
+          pip-audit \
+            --format json \
+            --output pip-audit-results.json \
+            --desc
+
+      - name: Upload pip-audit JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-results
+          path: pip-audit-results.json
+          retention-days: 90
+
+      - name: Write timing summary
+        if: always()
+        run: |
+          end=$(date +%s)
+          duration=$(( end - ${{ steps.timer.outputs.start }} ))
+          vulns=$(python3 -c "
+          import json
+          data = json.load(open('pip-audit-results.json'))
+          print(sum(1 for d in data if d.get('vulns')))
+          " 2>/dev/null || echo "N/A")
+          {
+            echo "## 📦 pip-audit"
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Duration | ${duration}s |"
+            echo "| Vulnerable packages | ${vulns} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  security-gate:
+    name: Security Gate
+    if: always() && github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    needs: [trivy-scan, bandit-sast, pip-audit]
+    permissions: {}
+
+    steps:
+      - name: Evaluate scan results
+        run: |
+          echo "## 🚦 Security Gate Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Scanner | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          failed=0
+
+          for job_result in \
+            "Trivy:${{ needs.trivy-scan.result }}" \
+            "Bandit:${{ needs.bandit-sast.result }}" \
+            "pip-audit:${{ needs.pip-audit.result }}"; do
+            name="${job_result%%:*}"
+            result="${job_result##*:}"
+            if [ "$result" = "success" ]; then
+              echo "| $name | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $name | ❌ Failed ($result) |" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -eq 1 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**❌ Security gate FAILED — PR cannot be merged.**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::One or more security scans failed. Fix findings before merging."
+            exit 1
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**✅ All security scans passed.**" >> "$GITHUB_STEP_SUMMARY"
