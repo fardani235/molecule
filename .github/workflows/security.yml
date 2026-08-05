@@ -79,3 +79,86 @@ jobs:
             echo "| Duration | ${duration}s |"
             echo "| Severity Filter | MEDIUM, HIGH, CRITICAL |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  bandit-sast:
+    name: Bandit SAST
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Bandit
+        run: pip install bandit[sarif]
+
+      - name: Run Bandit scan
+        run: |
+          bandit -r src/ \
+            --severity-level medium \
+            --confidence-level medium \
+            -f sarif \
+            -o bandit-results.sarif || true
+
+      - name: Upload Bandit SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "bandit-results.sarif"
+          category: "bandit"
+
+      - name: Run Bandit scan (JSON)
+        run: |
+          bandit -r src/ \
+            --severity-level medium \
+            --confidence-level medium \
+            -f json \
+            -o bandit-results.json || true
+
+      - name: Check Bandit findings and fail if any
+        run: |
+          count=$(python3 -c "
+          import json, sys
+          data = json.load(open('bandit-results.json'))
+          results = data.get('results', [])
+          print(len(results))
+          ")
+          echo "Bandit findings: $count"
+          if [ "$count" -gt 0 ]; then
+            echo "::error::Bandit found $count issue(s) at MEDIUM+ severity/confidence"
+            exit 1
+          fi
+
+      - name: Upload Bandit JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-results
+          path: bandit-results.json
+          retention-days: 90
+
+      - name: Write timing summary
+        if: always()
+        run: |
+          end=$(date +%s)
+          duration=$(( end - ${{ steps.timer.outputs.start }} ))
+          {
+            echo "## 🐍 Bandit SAST"
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Duration | ${duration}s |"
+            echo "| Target | src/ |"
+            echo "| Severity | MEDIUM+ |"
+          } >> "$GITHUB_STEP_SUMMARY"
