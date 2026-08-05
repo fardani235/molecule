@@ -1,0 +1,346 @@
+---
+# FORK-ONLY — runs exclusively in fardani235/molecule.
+# See docs/superpowers/specs/2026-08-05-devsecops-ci-improvements-design.md.
+name: security
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "releases/**"
+      - "stable/**"
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: read-all
+
+jobs:
+  prepare:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      date-day: ${{ steps.setup.outputs.date-day }}
+      date-week: ${{ steps.setup.outputs.date-week }}
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+        with:
+          uv-sync-args: ""
+
+  sast-bandit:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+
+      - name: Install Bandit
+        run: pipx install "bandit[toml]==${BANDIT_VERSION}"
+
+      - name: Run Bandit (SARIF)
+        run: |
+          mkdir -p sarif-out
+          bandit -c .security/bandit.yaml -r src/molecule -f sarif -o sarif-out/bandit.sarif || true
+          bandit -c .security/bandit.yaml -r src/molecule -f json -o sarif-out/bandit.json || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-bandit
+          path: sarif-out/
+          retention-days: 30
+
+  sast-semgrep:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+        with:
+          uv-sync-args: ""
+
+      - name: Install Semgrep
+        run: pipx install "semgrep==${SEMGREP_VERSION}"
+
+      - name: Run Semgrep (SARIF)
+        run: |
+          mkdir -p sarif-out
+          semgrep scan \
+            --config p/python \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/ci \
+            --config .security/semgrep.yml \
+            --sarif --output sarif-out/semgrep.sarif || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-semgrep
+          path: sarif-out/
+          retention-days: 30
+
+  sca-pip-audit:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+
+      - name: Install pip-audit
+        run: pipx install "pip-audit==${PIP_AUDIT_VERSION}"
+
+      - name: Export requirements from uv
+        run: uv export --frozen --format requirements-txt > requirements.txt
+
+      - name: Run pip-audit (SARIF + JSON)
+        run: |
+          mkdir -p sarif-out
+          pip-audit -r requirements.txt --format sarif --output sarif-out/pip-audit.sarif || true
+          pip-audit -r requirements.txt --format json --output sarif-out/pip-audit.json || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-pip-audit
+          path: sarif-out/
+          retention-days: 30
+
+  sca-trivy-fs:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+        with:
+          uv-sync-args: ""
+
+      - name: Trivy fs (vuln)
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          scan-type: fs
+          scanners: vuln
+          format: sarif
+          output: sarif-out/trivy-fs.sarif
+          ignore-unfixed: false
+          severity: LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Ensure output dir + save cache
+        run: mkdir -p sarif-out && ls -la sarif-out || true
+
+      - uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        if: always()
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ needs.prepare.outputs.date-day }}
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-trivy-fs
+          path: sarif-out/
+          retention-days: 30
+
+  secrets-gitleaks:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+        with:
+          uv-sync-args: ""
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+      - name: Move report into sarif-out
+        run: |
+          mkdir -p sarif-out
+          if [[ -f results.sarif ]]; then mv results.sarif sarif-out/gitleaks.sarif; fi
+          if [[ -f results.json  ]]; then mv results.json  sarif-out/gitleaks.json;  fi
+          ls -la sarif-out || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-gitleaks
+          path: sarif-out/
+          retention-days: 30
+
+  iac-checkov:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+        with:
+          uv-sync-args: ""
+
+      - name: Install Checkov
+        run: pipx install "checkov==${CHECKOV_VERSION}"
+
+      - name: Run Checkov
+        run: |
+          mkdir -p sarif-out
+          checkov --config-file .security/checkov.yml \
+                  --directory . \
+                  --output-file-path sarif-out || true
+          # Checkov writes results_sarif.sarif into --output-file-path directory.
+          if [[ -f sarif-out/results_sarif.sarif ]]; then
+            mv sarif-out/results_sarif.sarif sarif-out/checkov.sarif
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-checkov
+          path: sarif-out/
+          retention-days: 30
+
+  iac-ansible-lint:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+
+      - name: Install ansible-lint
+        run: pipx install "ansible-lint==${ANSIBLE_LINT_VERSION}"
+
+      - name: Run ansible-lint (SARIF)
+        run: |
+          mkdir -p sarif-out
+          ansible-lint --profile production \
+            --sarif-file sarif-out/ansible-lint.sarif \
+            community.molecule tests/fixtures || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-ansible-lint
+          path: sarif-out/
+          retention-days: 30
+
+  sbom-cyclonedx:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+
+      - name: Install CycloneDX-Python
+        run: pipx install "cyclonedx-bom==${CYCLONEDX_PY_VERSION}"
+
+      - name: Generate Python env SBOM (CycloneDX)
+        run: |
+          mkdir -p sbom-out
+          cyclonedx-py environment --output-file sbom-out/sbom-python.cdx.json
+
+      - name: Generate repo SBOM (Syft, SPDX JSON)
+        uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb # v0.17.7
+        with:
+          format: spdx-json
+          output-file: sbom-out/sbom-repo.spdx.json
+          artifact-name: sbom-repo.spdx.json
+          upload-artifact: false
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom
+          path: sbom-out/
+          retention-days: 365
+
+  license-trivy:
+    needs: prepare
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - id: setup
+        uses: ./.github/actions/security-setup
+        with:
+          uv-sync-args: ""
+
+      - name: Trivy fs (license)
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          scan-type: fs
+          scanners: license
+          format: sarif
+          output: sarif-out/trivy-license.sarif
+          severity: LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Also emit JSON for auditing
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        with:
+          scan-type: fs
+          scanners: license
+          format: json
+          output: sarif-out/trivy-license.json
+          exit-code: "0"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-license-trivy
+          path: sarif-out/
+          retention-days: 30
