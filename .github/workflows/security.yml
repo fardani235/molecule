@@ -1,0 +1,81 @@
+---
+name: security
+
+on:
+  pull_request:
+    branches:
+      - "main"
+  push:
+    branches:
+      - "main"
+  schedule:
+    - cron: "0 6 * * 1" # Weekly Monday 06:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  trivy-scan:
+    name: Trivy Security Scan
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "MEDIUM,HIGH,CRITICAL"
+          exit-code: "1"
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "trivy-results.sarif"
+          category: "trivy"
+
+      - name: Run Trivy filesystem scan (JSON)
+        if: always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "json"
+          output: "trivy-results.json"
+          severity: "MEDIUM,HIGH,CRITICAL"
+
+      - name: Upload Trivy JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.json
+          retention-days: 90
+
+      - name: Write timing summary
+        if: always()
+        run: |
+          end=$(date +%s)
+          duration=$(( end - ${{ steps.timer.outputs.start }} ))
+          {
+            echo "## 🔍 Trivy Scan"
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Duration | ${duration}s |"
+            echo "| Severity Filter | MEDIUM, HIGH, CRITICAL |"
+          } >> "$GITHUB_STEP_SUMMARY"
