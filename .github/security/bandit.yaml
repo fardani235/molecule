@@ -1,0 +1,8 @@
+# Bandit configuration.
+# Skips are DOCUMENTED with waiver comments — see .github/security/README.md.
+skips: []
+tests: []
+# Scan only production source; tests intentionally excluded.
+exclude_dirs:
+  - tests
+  - community.molecule/tests

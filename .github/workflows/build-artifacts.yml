@@ -1,0 +1,90 @@
+---
+name: build-artifacts
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "releases/**"
+      - "stable/**"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  CACHE_SALT: ${{ github.event.inputs.benchmark_mode == 'baseline' && github.run_id || 'default' }}
+
+jobs:
+  build:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write   # reserved for future SBOM attestation
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # setuptools-scm needs full history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: ./.github/actions/cache-python
+        with:
+          python-version: "3.11"
+          ansible: "true"
+          salt: ${{ env.CACHE_SALT }}
+
+      - name: Install build tooling
+        run: |
+          python3 -m pip install --user "build==1.*" "cyclonedx-bom==5.*"
+
+      - name: Build wheel and sdist
+        run: |
+          mkdir -p dist
+          python3 -m build --outdir dist .
+
+      - name: Build community.molecule collection tarball
+        run: |
+          python3 -m pip install --user "ansible-core>=2.15,<2.18"
+          cd community.molecule
+          ansible-galaxy collection build -v --force --output-path ../dist
+
+      - name: SHA-256 sums
+        run: |
+          cd dist
+          sha256sum *.whl *.tar.gz > SHA256SUMS.txt
+
+      - name: SBOM for built distributions
+        # `cyclonedx_py requirements pyproject.toml` produces a
+        # schema-invalid CDX 1.5 doc when deps are unpinned. Install the
+        # project into the environment first, then use `environment` mode
+        # which reads actually-installed versions and always validates.
+        run: |
+          python3 -m pip install --user . 2>&1 | tail -5 || true
+          python3 -m cyclonedx_py environment \
+            --output-file dist/sbom-wheel.cdx.json \
+            --output-format json
+          # sdist and wheel share the same dep graph — copy for clarity.
+          cp dist/sbom-wheel.cdx.json dist/sbom-sdist.cdx.json
+          if [ -f community.molecule/requirements.txt ]; then
+            python3 -m cyclonedx_py requirements community.molecule/requirements.txt \
+              --output-file dist/sbom-collection.cdx.json \
+              --output-format json --schema-version 1.4 || \
+              echo "{\"bomFormat\":\"CycloneDX\",\"specVersion\":\"1.4\",\"version\":1,\"components\":[]}" \
+                > dist/sbom-collection.cdx.json
+          fi
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 90
+          if-no-files-found: error

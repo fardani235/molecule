@@ -1,0 +1,2 @@
+# Pinned so CI is reproducible.
+pyyaml==6.0.2

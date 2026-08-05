@@ -1,0 +1,12 @@
+# Severity threshold at which the gate FAILS the PR.
+# Values: low | medium | high | critical
+# A finding at or above the effective threshold, if not waived, fails the gate.
+threshold: medium
+
+# Per-scanner overrides.
+overrides:
+  gitleaks:
+    # Any leaked secret is critical regardless of scanner category.
+    threshold: critical
+  kics:
+    threshold: medium

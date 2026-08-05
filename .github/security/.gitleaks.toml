@@ -1,0 +1,16 @@
+title = "molecule fork gitleaks config"
+
+# Inherit the default ruleset:
+[extend]
+useDefault = true
+
+# Allowlist — every entry MUST be justified with a waiver comment:
+#   # waived <YYYY-MM-DD> by <handle> — <reason>; re-review <YYYY-MM-DD>
+[allowlist]
+description = "Global allowlist"
+paths = [
+  # Test fixtures deliberately contain fake credentials for offline tests.
+  # waived 2026-08-06 by ridwan — Ansible test fixtures; re-review 2027-02-06
+  '''tests/fixtures/.*''',
+  '''community.molecule/tests/.*''',
+]

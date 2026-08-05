@@ -1,0 +1,383 @@
+---
+name: security
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "releases/**"
+      - "stable/**"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      benchmark_mode:
+        description: "Set to 'baseline' to force cache misses"
+        type: string
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  PYTHON_VERSION: "3.11"
+  CACHE_SALT: ${{ github.event.inputs.benchmark_mode == 'baseline' && github.run_id || 'default' }}
+
+jobs:
+
+  sast:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: ./.github/actions/cache-python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          salt: ${{ env.CACHE_SALT }}
+      - uses: ./.github/actions/cache-scanners
+        with:
+          trivy: "false"
+          semgrep: "true"
+          salt: ${{ env.CACHE_SALT }}
+
+      - name: Install Bandit and SARIF formatter
+        # Bandit ≥1.8 does NOT ship a native SARIF formatter — it must be
+        # installed as a plugin (bandit-sarif-formatter). We also install
+        # the JSON→SARIF converter as a fallback bridge.
+        run: |
+          python3 -m pip install --user \
+            "bandit[toml]==1.8.*" \
+            "bandit-sarif-formatter>=1.1.1"
+      - name: Run Bandit
+        run: |
+          mkdir -p reports
+          bandit -r src \
+            -c .github/security/bandit.yaml \
+            -f sarif -o reports/bandit.sarif \
+            --exit-zero
+          bandit -r src \
+            -c .github/security/bandit.yaml \
+            -f json -o reports/bandit.json \
+            --exit-zero
+
+      - name: Run Semgrep
+        # Semgrep's action writes SARIF only via the SEMGREP_SARIF env var (or
+        # by running `semgrep ci --sarif --output` manually). We invoke it
+        # via `semgrep scan` so we control the SARIF output path directly.
+        env:
+          SEMGREP_APP_TOKEN: ""
+        run: |
+          python3 -m pip install --user "semgrep>=1.90"
+          semgrep scan \
+            --config p/python \
+            --config p/security-audit \
+            --config p/secrets \
+            --sarif --sarif-output=reports/semgrep.sarif \
+            --json  --output=reports/semgrep.json \
+            src community.molecule || true
+
+      - name: Upload SARIF (Bandit) to code scanning
+        if: always() && hashFiles('reports/bandit.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/bandit.sarif
+          category: sast-bandit
+      - name: Upload SARIF (Semgrep) to code scanning
+        if: always() && hashFiles('reports/semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/semgrep.sarif
+          category: sast-semgrep
+
+      - name: Upload SAST artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-reports
+          path: reports/
+          retention-days: 90
+          if-no-files-found: warn
+
+  sca:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: ./.github/actions/cache-python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          salt: ${{ env.CACHE_SALT }}
+      - uses: ./.github/actions/cache-scanners
+        with:
+          trivy: "true"
+          semgrep: "false"
+          salt: ${{ env.CACHE_SALT }}
+
+      # The `pypa/gh-action-pip-audit` action's `format`/`output` args produce a
+      # single-format run and do not accept SARIF. Run pip-audit directly so we
+      # can emit BOTH SARIF (for the gate) and JSON (for the artifact).
+      - name: Install pip-audit
+        run: python3 -m pip install --user "pip-audit>=2.7"
+      - name: Run pip-audit (JSON)
+        run: |
+          mkdir -p reports
+          # pip-audit exits nonzero when it finds anything — the gate decides.
+          IGNORES=$(grep -v '^\s*\(#\|$\)' .github/security/pip-audit-ignore.txt 2>/dev/null | awk '{printf "--ignore-vuln %s ", $0}')
+          # shellcheck disable=SC2086
+          pip-audit -r <(python3 -m pip freeze) \
+            --format json --output reports/pip-audit.json \
+            $IGNORES || true
+      - name: Convert pip-audit JSON to SARIF
+        run: |
+          python3 .github/scripts/pip_audit_to_sarif.py \
+            reports/pip-audit.json > reports/pip-audit.sarif || echo "{}" > reports/pip-audit.sarif
+
+      - name: Run Trivy fs (SARIF)
+        # Trivy action tag format is `v<X.Y.Z>` — the plan's `0.24.0` doesn't
+        # exist. Pinning to a real tag; Renovate will bump.
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: reports/trivy-fs.sarif
+          severity: MEDIUM,HIGH,CRITICAL
+          ignorefile: .github/security/.trivyignore
+      - name: Run Trivy fs (JSON)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: json
+          output: reports/trivy-fs.json
+          severity: MEDIUM,HIGH,CRITICAL
+          ignorefile: .github/security/.trivyignore
+
+      - name: Upload SARIF (pip-audit) to code scanning
+        if: always() && hashFiles('reports/pip-audit.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/pip-audit.sarif
+          category: sca-pip-audit
+      - name: Upload SARIF (Trivy fs) to code scanning
+        if: always() && hashFiles('reports/trivy-fs.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/trivy-fs.sarif
+          category: sca-trivy
+
+      - name: Upload SCA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-reports
+          path: reports/
+          retention-days: 90
+          if-no-files-found: warn
+
+  secrets:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        # gitleaks-action requires GITHUB_TOKEN explicitly on pull_request runs.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_CONFIG: .github/security/.gitleaks.toml
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_SUMMARY: "true"
+        continue-on-error: true
+
+      - name: Rename output for consistency
+        if: always()
+        run: |
+          mkdir -p reports
+          [ -f results.sarif ] && mv results.sarif reports/gitleaks.sarif || true
+          [ -f results.json ]  && mv results.json  reports/gitleaks.json  || true
+
+      - name: Upload SARIF (Gitleaks) to code scanning
+        if: always() && hashFiles('reports/gitleaks.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/gitleaks.sarif
+          category: secrets-gitleaks
+
+      - name: Upload secrets artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secrets-reports
+          path: reports/
+          retention-days: 90
+          if-no-files-found: warn
+
+  iac:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/cache-scanners
+        with:
+          trivy: "false"
+          semgrep: "false"
+          kics: "true"
+          salt: ${{ env.CACHE_SALT }}
+      - name: Run KICS
+        uses: Checkmarx/kics-github-action@v2
+        with:
+          path: "community.molecule,tests"
+          output_path: reports
+          output_formats: sarif,json,html
+          exclude_paths: "tests/fixtures,community.molecule/tests"
+          fail_on: none
+        continue-on-error: true
+      - name: Rename KICS output for consistency
+        if: always()
+        run: |
+          [ -f reports/results.sarif ] && mv reports/results.sarif reports/kics.sarif || true
+          [ -f reports/results.json ]  && mv reports/results.json  reports/kics.json  || true
+          [ -f reports/results.html ]  && mv reports/results.html  reports/kics-results.html || true
+      - name: Upload SARIF (KICS) to code scanning
+        if: always() && hashFiles('reports/kics.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/kics.sarif
+          category: iac-kics
+      - name: Upload IaC artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iac-reports
+          path: reports/
+          retention-days: 90
+          if-no-files-found: warn
+
+  sbom:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: ./.github/actions/cache-python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          salt: ${{ env.CACHE_SALT }}
+
+      - name: Install CycloneDX generator
+        run: python3 -m pip install --user "cyclonedx-bom==5.*"
+      - name: Generate SBOM for Python deps
+        run: |
+          mkdir -p reports
+          python3 -m cyclonedx_py environment \
+            --output-file reports/sbom-python.cdx.json \
+            --output-format json || true
+          python3 -m cyclonedx_py requirements pyproject.toml \
+            --output-file reports/sbom-project.cdx.json \
+            --output-format json || true
+      - name: Upload SBOM artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: reports/
+          retention-days: 90
+          if-no-files-found: warn
+
+  gate:
+    if: github.repository == 'fardani235/molecule'
+    needs: [sast, sca, secrets, iac, sbom]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install script deps
+        run: python3 -m pip install --user -r .github/scripts/requirements.txt
+
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports
+          pattern: "*-reports"
+          merge-multiple: false
+
+      - name: Collect all SARIF into one dir
+        run: |
+          mkdir -p sarifs
+          find all-reports -name "*.sarif" -exec cp {} sarifs/ \;
+          ls -la sarifs
+
+      - name: Run gate
+        id: gate
+        run: |
+          python3 .github/scripts/gate.py \
+            --sarif-dir sarifs \
+            --policy .github/security/gate-policy.yml \
+            --waivers trivy=.github/security/.trivyignore \
+            --waivers pip-audit=.github/security/pip-audit-ignore.txt \
+            --out-md gate-summary.md \
+            --out-json gate-report.json
+        continue-on-error: true
+
+      - name: Publish gate summary to step summary
+        if: always()
+        run: cat gate-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-summary
+          path: |
+            gate-summary.md
+            gate-report.json
+          retention-days: 90
+
+      - name: Sticky PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: security-gate
+          path: gate-summary.md
+
+      - name: Fail if gate failed
+        if: steps.gate.outcome == 'failure'
+        run: |
+          echo "::error::Security gate failed — see gate-summary artifact."
+          exit 1

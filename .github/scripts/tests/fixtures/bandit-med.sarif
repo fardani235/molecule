@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "Bandit", "rules": [
+        {"id": "B101", "defaultConfiguration": {"level": "warning"}}
+      ]}},
+      "results": [
+        {
+          "ruleId": "B101",
+          "level": "warning",
+          "message": {"text": "assert_used"},
+          "locations": [
+            {"physicalLocation": {
+              "artifactLocation": {"uri": "src/molecule/util.py"},
+              "region": {"startLine": 42}
+            }}
+          ]
+        }
+      ]
+    }
+  ]
+}

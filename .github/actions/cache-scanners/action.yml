@@ -1,0 +1,57 @@
+name: cache-scanners
+description: >-
+  Composite cache action for security-scanner databases and rulesets.
+  Trivy's DB is time-versioned via the run_id so a stale DB is always
+  refreshed on top of the restored floor.
+
+inputs:
+  trivy:
+    description: Cache Trivy vuln DB
+    required: false
+    default: "true"
+  semgrep:
+    description: Cache Semgrep rules
+    required: false
+    default: "true"
+  kics:
+    description: Cache KICS queries
+    required: false
+    default: "false"
+  kics-version:
+    description: KICS version tag (used in the cache key)
+    required: false
+    default: "2.1.3"
+  salt:
+    description: Extra string mixed into every cache key (for benchmarks)
+    required: false
+    default: default
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Trivy vuln DB
+      if: inputs.trivy == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/trivy
+        key: trivy-db-${{ github.run_id }}-${{ inputs.salt }}
+        restore-keys: |
+          trivy-db-${{ inputs.salt }}-
+
+    - name: Cache Semgrep rules
+      if: inputs.semgrep == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.semgrep
+        key: semgrep-${{ hashFiles('.github/security/semgrep-rules.yml') }}-${{ inputs.salt }}
+        restore-keys: |
+          semgrep-${{ inputs.salt }}-
+
+    - name: Cache KICS queries
+      if: inputs.kics == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/kics
+        key: kics-${{ inputs.kics-version }}-${{ inputs.salt }}
+        restore-keys: |
+          kics-${{ inputs.salt }}-

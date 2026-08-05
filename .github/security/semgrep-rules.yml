@@ -1,0 +1,6 @@
+# Rulesets loaded by Semgrep. This file's hash is the cache key, so any
+# change here invalidates the Semgrep cache automatically.
+rulesets:
+  - p/python
+  - p/security-audit
+  - p/secrets
