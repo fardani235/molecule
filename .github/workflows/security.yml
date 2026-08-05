@@ -174,7 +174,7 @@ jobs:
           uv-sync-args: ""
 
       - name: Trivy fs (vuln)
-        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           scan-type: fs
           scanners: vuln
@@ -339,7 +339,7 @@ jobs:
       - name: Generate Python env SBOM (CycloneDX)
         run: |
           mkdir -p sbom-out
-          cyclonedx-py environment --output-file sbom-out/sbom-python.cdx.json
+          cyclonedx-py environment -o sbom-out/sbom-python.cdx.json
 
       - name: Generate repo SBOM (Syft, SPDX JSON)
         uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb # v0.17.7
@@ -377,7 +377,7 @@ jobs:
           uv-sync-args: ""
 
       - name: Trivy fs (license)
-        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           scan-type: fs
           scanners: license
@@ -387,7 +387,7 @@ jobs:
           exit-code: "0"
 
       - name: Also emit JSON for auditing
-        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           scan-type: fs
           scanners: license
@@ -450,7 +450,7 @@ jobs:
         id: aggregate
         run: |
           set +e
-          python .security/scripts/aggregate_sarif.py \
+          uv run python .security/scripts/aggregate_sarif.py \
             --sarif-dir sarif-in \
             --allowlist .security/allowlist.yml \
             --out-dir gate-out
