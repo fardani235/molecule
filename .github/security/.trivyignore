@@ -1,3 +1,6 @@
 # One CVE id per line. Every entry MUST carry a waiver comment on the line
 # above:
 #   # waived <YYYY-MM-DD> by <handle> — <reason>; re-review <YYYY-MM-DD>
+
+# waived 2026-08-06 by ridwan — cryptography 49.0.0 in uv.lock; upstream uv.lock has a self-dep issue blocking `uv lock --upgrade-package cryptography`, tracked to be unblocked and bumped to 50.0.0; re-review 2026-11-06
+CVE-2026-69247
