@@ -462,12 +462,61 @@ jobs:
             --out-dir gate-out
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
-      - name: Upload merged SARIF to Code Scanning
-        if: ${{ always() }}
+      - name: Upload bandit SARIF to Code Scanning
+        if: ${{ always() && hashFiles('sarif-in/bandit.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
         with:
-          sarif_file: gate-out/security-combined.sarif
-          category: security-gate
+          sarif_file: sarif-in/bandit.sarif
+          category: security-gate/bandit
+
+      - name: Upload semgrep SARIF to Code Scanning
+        if: ${{ always() && hashFiles('sarif-in/semgrep.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        with:
+          sarif_file: sarif-in/semgrep.sarif
+          category: security-gate/semgrep
+
+      - name: Upload pip-audit SARIF to Code Scanning
+        if: ${{ always() && hashFiles('sarif-in/pip-audit.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        with:
+          sarif_file: sarif-in/pip-audit.sarif
+          category: security-gate/pip-audit
+
+      - name: Upload trivy-fs SARIF to Code Scanning
+        if: ${{ always() && hashFiles('sarif-in/trivy-fs.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        with:
+          sarif_file: sarif-in/trivy-fs.sarif
+          category: security-gate/trivy-fs
+
+      - name: Upload gitleaks SARIF to Code Scanning
+        if: ${{ always() && hashFiles('sarif-in/gitleaks.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        with:
+          sarif_file: sarif-in/gitleaks.sarif
+          category: security-gate/gitleaks
+
+      - name: Upload checkov SARIF to Code Scanning
+        if: ${{ always() && hashFiles('sarif-in/checkov.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        with:
+          sarif_file: sarif-in/checkov.sarif
+          category: security-gate/checkov
+
+      - name: Upload ansible-lint SARIF to Code Scanning
+        if: ${{ always() && hashFiles('sarif-in/ansible-lint.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        with:
+          sarif_file: sarif-in/ansible-lint.sarif
+          category: security-gate/ansible-lint
+
+      - name: Upload trivy-license SARIF to Code Scanning
+        if: ${{ always() && hashFiles('sarif-in/trivy-license.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        with:
+          sarif_file: sarif-in/trivy-license.sarif
+          category: security-gate/trivy-license
 
       - name: Upload security-report artifact
         if: ${{ always() }}
