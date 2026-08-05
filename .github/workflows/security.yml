@@ -31,6 +31,10 @@ jobs:
       date-day: ${{ steps.setup.outputs.date-day }}
       date-week: ${{ steps.setup.outputs.date-week }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
         with:
@@ -48,6 +52,10 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
 
@@ -78,6 +86,10 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
         with:
@@ -115,6 +127,10 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
 
@@ -148,6 +164,10 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
         with:
@@ -191,6 +211,10 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
         with:
@@ -229,6 +253,10 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
         with:
@@ -266,6 +294,10 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
 
@@ -294,6 +326,10 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
 
@@ -331,6 +367,10 @@ jobs:
       contents: read
       security-events: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
         with:
@@ -383,6 +423,10 @@ jobs:
       security-events: write
       pull-requests: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
       - id: setup
         uses: ./.github/actions/security-setup
         with:
