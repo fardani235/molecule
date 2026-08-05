@@ -38,3 +38,46 @@ jobs:
             bandit.sarif
             bandit.json
           retention-days: 30
+  trivy-deps:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Cache Trivy vulnerability DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-
+      - name: Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          format: sarif
+          output: trivy-deps.sarif
+          severity: MEDIUM,HIGH,CRITICAL
+          cache-dir: ~/.cache/trivy
+      - name: Trivy filesystem scan (JSON for gate)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          format: json
+          output: trivy-deps.json
+          severity: MEDIUM,HIGH,CRITICAL
+          cache-dir: ~/.cache/trivy
+      - name: Upload Trivy deps reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-deps-report
+          path: |
+            trivy-deps.sarif
+            trivy-deps.json
+          retention-days: 30
