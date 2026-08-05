@@ -61,7 +61,7 @@ jobs:
           restore-keys: |
             trivy-db-
       - name: Trivy filesystem scan (SARIF)
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -71,7 +71,7 @@ jobs:
           severity: MEDIUM,HIGH,CRITICAL
           cache-dir: ~/.cache/trivy
       - name: Trivy filesystem scan (JSON for gate)
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -157,7 +157,7 @@ jobs:
           restore-keys: |
             trivy-db-
       - name: Trivy scan SBOM (SARIF)
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: sbom
           scan-ref: sbom-cyclonedx.json
@@ -166,7 +166,7 @@ jobs:
           severity: MEDIUM,HIGH,CRITICAL
           cache-dir: ~/.cache/trivy
       - name: Trivy scan SBOM (JSON for gate)
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: sbom
           scan-ref: sbom-cyclonedx.json
