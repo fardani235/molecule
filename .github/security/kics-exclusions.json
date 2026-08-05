@@ -1,0 +1,10 @@
+{
+  "exclude_paths": [
+    "tests/fixtures",
+    "community.molecule/tests"
+  ],
+  "exclude_queries": [],
+  "_waivers": [
+    "Waivers for exclude_queries entries MUST be recorded in .github/security/README.md with re-review date."
+  ]
+}

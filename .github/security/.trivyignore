@@ -1,0 +1,3 @@
+# One CVE id per line. Every entry MUST carry a waiver comment on the line
+# above:
+#   # waived <YYYY-MM-DD> by <handle> — <reason>; re-review <YYYY-MM-DD>
