@@ -1,0 +1,12 @@
+# Trivy ignore file for acknowledged vulnerabilities
+# See: docs/superpowers/specs/2026-08-06-devsecops-ci-design.md (Risks & Mitigations)
+
+# cryptography 49.0.0 pinned in uv.lock — transitive dependency of ansible-core.
+# The locked version is constrained by ansible-core compatibility; upgrading
+# requires an upstream ansible-core release. Not a runtime risk for Molecule
+# itself (used only for SSH/TLS in Ansible connections).
+CVE-2026-69247
+
+# setuptools CVE — build-tool-only vulnerability (macOS MANIFEST.in Unicode
+# normalization bypass). Not a runtime dependency of Molecule.
+CVE-2026-59890

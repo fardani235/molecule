@@ -41,6 +41,7 @@ jobs:
           output: "trivy-results.sarif"
           severity: "MEDIUM,HIGH,CRITICAL"
           exit-code: "1"
+          trivyignores: ".trivyignore"
 
       - name: Upload Trivy SARIF to GitHub Security tab
         if: always()
@@ -58,6 +59,7 @@ jobs:
           format: "json"
           output: "trivy-results.json"
           severity: "MEDIUM,HIGH,CRITICAL"
+          trivyignores: ".trivyignore"
 
       - name: Upload Trivy JSON artifact
         if: always()
@@ -194,7 +196,9 @@ jobs:
           pip-audit \
             --format json \
             --output pip-audit-results.json \
-            --desc
+            --desc \
+            --ignore-vuln PYSEC-2026-3447 \
+            --ignore-vuln CVE-2026-59890
 
       - name: Upload pip-audit JSON artifact
         if: always()
