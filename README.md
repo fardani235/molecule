@@ -35,6 +35,17 @@ python3 -m molecule ...  # python module calling method
 
 Read the documentation and more at <https://docs.ansible.com/projects/molecule//>.
 
+## Security
+
+This fork ships a DevSecOps CI pipeline. See:
+
+- [`docs/security/setup.md`](docs/security/setup.md) — one-time setup and
+  branch protection.
+- [`docs/security/monitoring.md`](docs/security/monitoring.md) — where to
+  find artifacts and continuous surfaces.
+- [`docs/security/allowlist.md`](docs/security/allowlist.md) — how to add
+  or edit `.security/allowlist.yml`.
+
 ## Get Involved
 
 See the [Talk to us](https://docs.ansible.com/projects/molecule//contributing/#talk-to-us) section of the documentation to ask questions, find help, and join the conversation.
