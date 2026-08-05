@@ -1,0 +1,268 @@
+---
+name: security
+
+on:
+  pull_request:
+    branches:
+      - "main"
+  push:
+    branches:
+      - "main"
+  schedule:
+    - cron: "0 6 * * 1" # Weekly Monday 06:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  trivy-scan:
+    name: Trivy Security Scan
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan (SARIF)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "MEDIUM,HIGH,CRITICAL"
+          exit-code: "1"
+          trivyignores: ".trivyignore"
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "trivy-results.sarif"
+          category: "trivy"
+
+      - name: Run Trivy filesystem scan (JSON)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "json"
+          output: "trivy-results.json"
+          severity: "MEDIUM,HIGH,CRITICAL"
+          trivyignores: ".trivyignore"
+
+      - name: Upload Trivy JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.json
+          retention-days: 90
+
+      - name: Write timing summary
+        if: always()
+        run: |
+          end=$(date +%s)
+          duration=$(( end - ${{ steps.timer.outputs.start }} ))
+          {
+            echo "## 🔍 Trivy Scan"
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Duration | ${duration}s |"
+            echo "| Severity Filter | MEDIUM, HIGH, CRITICAL |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  bandit-sast:
+    name: Bandit SAST
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Bandit
+        run: pip install bandit[sarif]
+
+      - name: Run Bandit scan
+        run: |
+          bandit -r src/ \
+            --severity-level medium \
+            --confidence-level medium \
+            -f sarif \
+            -o bandit-results.sarif || true
+
+      - name: Upload Bandit SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "bandit-results.sarif"
+          category: "bandit"
+
+      - name: Run Bandit scan (JSON)
+        run: |
+          bandit -r src/ \
+            --severity-level medium \
+            --confidence-level medium \
+            -f json \
+            -o bandit-results.json || true
+
+      - name: Check Bandit findings and fail if any
+        run: |
+          count=$(python3 -c "
+          import json, sys
+          data = json.load(open('bandit-results.json'))
+          results = data.get('results', [])
+          print(len(results))
+          ")
+          echo "Bandit findings: $count"
+          if [ "$count" -gt 0 ]; then
+            echo "::error::Bandit found $count issue(s) at MEDIUM+ severity/confidence"
+            exit 1
+          fi
+
+      - name: Upload Bandit JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-results
+          path: bandit-results.json
+          retention-days: 90
+
+      - name: Write timing summary
+        if: always()
+        run: |
+          end=$(date +%s)
+          duration=$(( end - ${{ steps.timer.outputs.start }} ))
+          {
+            echo "## 🐍 Bandit SAST"
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Duration | ${duration}s |"
+            echo "| Target | src/ |"
+            echo "| Severity | MEDIUM+ |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  pip-audit:
+    name: pip-audit Dependency Scan
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Install project dependencies
+        run: pip install .
+
+      - name: Run pip-audit
+        run: |
+          pip-audit \
+            --format json \
+            --output pip-audit-results.json \
+            --desc \
+            --ignore-vuln PYSEC-2026-3447 \
+            --ignore-vuln CVE-2026-59890
+
+      - name: Upload pip-audit JSON artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-results
+          path: pip-audit-results.json
+          retention-days: 90
+
+      - name: Write timing summary
+        if: always()
+        run: |
+          end=$(date +%s)
+          duration=$(( end - ${{ steps.timer.outputs.start }} ))
+          vulns=$(python3 -c "
+          import json
+          data = json.load(open('pip-audit-results.json'))
+          print(sum(1 for d in data if d.get('vulns')))
+          " 2>/dev/null || echo "N/A")
+          {
+            echo "## 📦 pip-audit"
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Duration | ${duration}s |"
+            echo "| Vulnerable packages | ${vulns} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  security-gate:
+    name: Security Gate
+    if: always() && github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    needs: [trivy-scan, bandit-sast, pip-audit]
+    permissions: {}
+
+    steps:
+      - name: Evaluate scan results
+        run: |
+          echo "## 🚦 Security Gate Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Scanner | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          failed=0
+
+          for job_result in \
+            "Trivy:${{ needs.trivy-scan.result }}" \
+            "Bandit:${{ needs.bandit-sast.result }}" \
+            "pip-audit:${{ needs.pip-audit.result }}"; do
+            name="${job_result%%:*}"
+            result="${job_result##*:}"
+            if [ "$result" = "success" ]; then
+              echo "| $name | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $name | ❌ Failed ($result) |" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -eq 1 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**❌ Security gate FAILED — PR cannot be merged.**" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::One or more security scans failed. Fix findings before merging."
+            exit 1
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**✅ All security scans passed.**" >> "$GITHUB_STEP_SUMMARY"

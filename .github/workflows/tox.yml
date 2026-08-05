@@ -22,7 +22,87 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cache-deps:
+    name: Warm dependency caches
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache UV/pip downloads
+        id: cache-uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py${{ matrix.python-version }}-
+          save-always: true
+
+      - name: Cache tox environments
+        id: cache-tox
+        uses: actions/cache@v4
+        with:
+          path: .tox
+          key: tox-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            tox-${{ runner.os }}-py${{ matrix.python-version }}-
+          save-always: true
+
+      - name: Cache pre-commit hooks
+        id: cache-precommit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+          save-always: true
+
+      - name: Cache mypy
+        id: cache-mypy
+        uses: actions/cache@v4
+        with:
+          path: .cache/.mypy
+          key: mypy-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('src/**/*.py') }}
+          restore-keys: |
+            mypy-${{ runner.os }}-py${{ matrix.python-version }}-
+          save-always: true
+
+      - name: Write cache summary
+        if: always()
+        run: |
+          end=$(date +%s)
+          duration=$(( end - ${{ steps.timer.outputs.start }} ))
+          {
+            echo "## 📦 Cache Warm (Python ${{ matrix.python-version }})"
+            echo "| Cache Layer | Hit? |"
+            echo "|-------------|------|"
+            echo "| UV/pip | ${{ steps.cache-uv.outputs.cache-hit == 'true' && '✅ Hit' || '❌ Miss' }} |"
+            echo "| Tox envs | ${{ steps.cache-tox.outputs.cache-hit == 'true' && '✅ Hit' || '❌ Miss' }} |"
+            echo "| Pre-commit | ${{ steps.cache-precommit.outputs.cache-hit == 'true' && '✅ Hit' || '❌ Miss' }} |"
+            echo "| Mypy | ${{ steps.cache-mypy.outputs.cache-hit == 'true' && '✅ Hit' || '❌ Miss' }} |"
+            echo "| **Warm duration** | **${duration}s** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   tox:
+    needs: cache-deps
     uses: ansible/team-devtools/.github/workflows/tox.yml@main
     secrets: inherit
     with:
@@ -44,3 +124,24 @@ jobs:
             | sudo tee /etc/containers/containers.conf.d/99-gha-crun.conf >/dev/null
           podman info --format '{{.Host.OCIRuntime.Path}}' || true
         fi
+
+  timing-report:
+    name: CI Timing Report
+    if: always() && github.repository == 'fardani235/molecule'
+    needs: [cache-deps, tox]
+    runs-on: ubuntu-24.04
+    permissions: {}
+
+    steps:
+      - name: Generate timing summary
+        run: |
+          {
+            echo "## ⏱️ tox Workflow Timing Report"
+            echo ""
+            echo "| Job | Result |"
+            echo "|-----|--------|"
+            echo "| Cache warm | ${{ needs.cache-deps.result }} |"
+            echo "| Tox tests | ${{ needs.tox.result }} |"
+            echo ""
+            echo "*(Per-step durations visible in each job's logs and summary)*"
+          } >> "$GITHUB_STEP_SUMMARY"

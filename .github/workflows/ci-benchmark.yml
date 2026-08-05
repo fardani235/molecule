@@ -1,0 +1,113 @@
+---
+name: ci-benchmark
+
+on:
+  workflow_run:
+    workflows:
+      - tox
+    types:
+      - completed
+
+permissions:
+  actions: read
+
+jobs:
+  benchmark:
+    name: CI Performance Report
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Collect workflow run metrics
+        uses: actions/github-script@v7
+        id: metrics
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const runId = run.id;
+
+            // Fetch jobs for the completed workflow run
+            const { data: jobsData } = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+            });
+
+            const jobs = jobsData.jobs;
+            const report = [];
+
+            report.push('# ⏱️ CI Performance Benchmark Report');
+            report.push('');
+            report.push(`**Workflow:** ${run.name}`);
+            report.push(`**Run ID:** ${runId}`);
+            report.push(`**Branch:** ${run.head_branch}`);
+            report.push(`**Commit:** \`${run.head_sha.substring(0, 8)}\``);
+            report.push(`**Trigger:** ${run.event}`);
+            report.push(`**Conclusion:** ${run.conclusion}`);
+            report.push('');
+
+            // Workflow-level timing
+            const wfStart = new Date(run.run_started_at);
+            const wfEnd = new Date(run.updated_at);
+            const wfDuration = Math.round((wfEnd - wfStart) / 1000);
+            report.push(`**Total wall-clock time:** ${wfDuration}s (${Math.round(wfDuration / 60)}m ${wfDuration % 60}s)`);
+            report.push('');
+
+            // Per-job timing table
+            report.push('## Per-Job Breakdown');
+            report.push('');
+            report.push('| Job | Status | Duration | Started | Completed |');
+            report.push('|-----|--------|----------|---------|-----------|');
+
+            for (const job of jobs) {
+              if (!job.started_at || !job.completed_at) continue;
+              const start = new Date(job.started_at);
+              const end = new Date(job.completed_at);
+              const duration = Math.round((end - start) / 1000);
+              const status = job.conclusion === 'success' ? '✅' : job.conclusion === 'skipped' ? '⏭️' : '❌';
+              report.push(`| ${job.name} | ${status} ${job.conclusion} | ${duration}s | ${start.toISOString()} | ${end.toISOString()} |`);
+            }
+
+            report.push('');
+
+            // Cache analysis — look for cache-deps jobs
+            const cacheJobs = jobs.filter(j => j.name.includes('Cache') || j.name.includes('cache'));
+            if (cacheJobs.length > 0) {
+              report.push('## Cache Performance');
+              report.push('');
+              report.push('Cache hit/miss details are available in each Cache Warm job summary.');
+              report.push('Check the individual job logs for per-layer cache status.');
+              report.push('');
+            }
+
+            // Performance notes
+            report.push('## Notes');
+            report.push('');
+            report.push('- First run after dependency changes will show cache misses (expected).');
+            report.push('- Subsequent runs on the same branch should show cache hits and faster times.');
+            report.push('- Compare total wall-clock time across runs to measure caching impact.');
+            report.push('');
+
+            const reportText = report.join('\n');
+            core.setOutput('report', reportText);
+            return reportText;
+
+      - name: Write benchmark to job summary
+        run: |
+          cat << 'REPORT_EOF' >> "$GITHUB_STEP_SUMMARY"
+          ${{ steps.metrics.outputs.report }}
+          REPORT_EOF
+
+      - name: Save benchmark artifact
+        run: |
+          mkdir -p benchmark
+          cat << 'REPORT_EOF' > benchmark/ci-benchmark-report.md
+          ${{ steps.metrics.outputs.report }}
+          REPORT_EOF
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-benchmark-report
+          path: benchmark/ci-benchmark-report.md
+          retention-days: 90
