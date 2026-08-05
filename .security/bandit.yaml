@@ -1,0 +1,8 @@
+# Bandit config — SAST for src/molecule/.
+# tests/fixtures/** are intentional Ansible playbooks under test; excluded.
+exclude_dirs:
+  - tests/fixtures
+  - .venv
+  - build
+  - dist
+skips: []

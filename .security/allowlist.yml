@@ -1,0 +1,6 @@
+# Cross-scanner accepted-risk registry.
+# Every entry MUST have: id, reason, owner, expires (ISO 8601).
+# Expired entries re-enter the gate. Duplicate `id` fails the gate.
+# See docs/security/allowlist.md for the process.
+version: 1
+findings: []

@@ -1,0 +1,10 @@
+# Semgrep local rules + path excludes.
+# Registry rulesets are passed on the CLI (p/python, p/security-audit, ...).
+rules: []
+paths:
+  exclude:
+    - tests/fixtures
+    - .venv
+    - build
+    - dist
+    - "**/*.md"

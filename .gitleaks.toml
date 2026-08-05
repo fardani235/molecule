@@ -1,0 +1,12 @@
+# Gitleaks configuration.
+# Extends the default ruleset and allowlists test fixtures that ship
+# intentional dummy credentials.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Molecule test fixtures with dummy credentials"
+paths = [
+  '''tests/fixtures/.*''',
+  '''community\.molecule/.*''',
+]
