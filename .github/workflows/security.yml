@@ -173,6 +173,9 @@ jobs:
         with:
           uv-sync-args: ""
 
+      - name: Ensure sarif-out exists
+        run: mkdir -p sarif-out
+
       - name: Trivy fs (vuln)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -375,6 +378,9 @@ jobs:
         uses: ./.github/actions/security-setup
         with:
           uv-sync-args: ""
+
+      - name: Ensure sarif-out exists
+        run: mkdir -p sarif-out
 
       - name: Trivy fs (license)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
