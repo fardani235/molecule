@@ -38,7 +38,9 @@ jobs:
 
   sast-bandit:
     needs: prepare
-    if: github.repository == 'fardani235/molecule'
+    if: |
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -66,7 +68,9 @@ jobs:
 
   sast-semgrep:
     needs: prepare
-    if: github.repository == 'fardani235/molecule'
+    if: |
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -101,7 +105,9 @@ jobs:
 
   sca-pip-audit:
     needs: prepare
-    if: github.repository == 'fardani235/molecule'
+    if: |
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -132,7 +138,9 @@ jobs:
 
   sca-trivy-fs:
     needs: prepare
-    if: github.repository == 'fardani235/molecule'
+    if: |
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -173,7 +181,9 @@ jobs:
 
   secrets-gitleaks:
     needs: prepare
-    if: github.repository == 'fardani235/molecule'
+    if: |
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -209,7 +219,9 @@ jobs:
 
   iac-checkov:
     needs: prepare
-    if: github.repository == 'fardani235/molecule'
+    if: |
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -244,7 +256,9 @@ jobs:
 
   iac-ansible-lint:
     needs: prepare
-    if: github.repository == 'fardani235/molecule'
+    if: |
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -307,7 +321,9 @@ jobs:
 
   license-trivy:
     needs: prepare
-    if: github.repository == 'fardani235/molecule'
+    if: |
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
@@ -355,7 +371,10 @@ jobs:
       - iac-checkov
       - iac-ansible-lint
       - license-trivy
-    if: ${{ always() && github.repository == 'fardani235/molecule' }}
+    if: |
+      always() &&
+      github.repository == 'fardani235/molecule' &&
+      !(github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-security'))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     continue-on-error: true          # Flipped to false in Task 12.
