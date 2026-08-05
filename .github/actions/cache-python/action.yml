@@ -1,0 +1,52 @@
+name: cache-python
+description: >-
+  Composite cache action for pip, uv, tox venvs, pre-commit hooks, and
+  optionally Ansible collections/roles. Every layer uses restore-keys so a
+  lockfile bump still restores an 80%-warm cache.
+
+inputs:
+  python-version:
+    description: Python version (used in the cache key)
+    required: true
+  ansible:
+    description: Also cache ~/.ansible/collections and ~/.ansible/roles
+    required: false
+    default: "false"
+  pre-commit:
+    description: Also cache ~/.cache/pre-commit
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Cache pip + uv + tox venvs
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/pip
+          ~/.cache/uv
+          .tox
+        key: py-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('pyproject.toml', 'tox.ini', '.pre-commit-config.yaml') }}
+        restore-keys: |
+          py-${{ runner.os }}-${{ inputs.python-version }}-
+
+    - name: Cache pre-commit hooks
+      if: inputs.pre-commit == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pre-commit
+        key: pc-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+        restore-keys: |
+          pc-${{ runner.os }}-
+
+    - name: Cache Ansible collections and roles
+      if: inputs.ansible == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.ansible/collections
+          ~/.ansible/roles
+        key: ansible-${{ runner.os }}-${{ hashFiles('community.molecule/galaxy.yml', 'community.molecule/requirements.yml', 'requirements.yml') }}
+        restore-keys: |
+          ansible-${{ runner.os }}-
