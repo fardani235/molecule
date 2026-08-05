@@ -109,3 +109,55 @@ jobs:
             gitleaks.sarif
             gitleaks.json
           retention-days: 30
+  trivy-artifact:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Generate CycloneDX SBOM for scanning
+        run: |
+          uv export --format requirements-txt --no-hashes -o requirements.txt
+          uvx --from cyclonedx-bom cyclonedx-py requirements requirements.txt -o sbom-cyclonedx.json
+      - name: Cache Trivy vulnerability DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-
+      - name: Trivy scan SBOM (SARIF)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: sbom
+          scan-ref: sbom-cyclonedx.json
+          format: sarif
+          output: trivy-artifact.sarif
+          severity: MEDIUM,HIGH,CRITICAL
+          cache-dir: ~/.cache/trivy
+      - name: Trivy scan SBOM (JSON for gate)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: sbom
+          scan-ref: sbom-cyclonedx.json
+          format: json
+          output: trivy-artifact.json
+          severity: MEDIUM,HIGH,CRITICAL
+          cache-dir: ~/.cache/trivy
+      - name: Upload Trivy artifact reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-artifact-report
+          path: |
+            trivy-artifact.sarif
+            trivy-artifact.json
+          retention-days: 30
