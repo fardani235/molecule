@@ -1,0 +1,77 @@
+---
+name: build-artifacts
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "releases/**"
+      - "stable/**"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  build:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write   # reserved for future SBOM attestation
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # setuptools-scm needs full history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: ./.github/actions/cache-python
+        with:
+          python-version: "3.11"
+          ansible: "true"
+
+      - name: Install build tooling
+        run: |
+          python3 -m pip install --user "build==1.*" "cyclonedx-bom==5.*"
+
+      - name: Build wheel and sdist
+        run: |
+          mkdir -p dist
+          python3 -m build --outdir dist .
+
+      - name: Build community.molecule collection tarball
+        run: |
+          python3 -m pip install --user "ansible-core>=2.15,<2.18"
+          cd community.molecule
+          ansible-galaxy collection build -v --force --output-path ../dist
+
+      - name: SHA-256 sums
+        run: |
+          cd dist
+          sha256sum *.whl *.tar.gz > SHA256SUMS.txt
+
+      - name: SBOM for built distributions
+        run: |
+          python3 -m cyclonedx_py requirements pyproject.toml \
+            --output-file dist/sbom-wheel.cdx.json \
+            --output-format json
+          # Same content applies to sdist (same project); duplicate for clarity.
+          cp dist/sbom-wheel.cdx.json dist/sbom-sdist.cdx.json
+          python3 -m cyclonedx_py requirements community.molecule/requirements.txt \
+            --output-file dist/sbom-collection.cdx.json \
+            --output-format json || true
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 90
+          if-no-files-found: error
