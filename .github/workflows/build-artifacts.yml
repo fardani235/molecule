@@ -18,6 +18,9 @@ concurrency:
 
 permissions: {}
 
+env:
+  CACHE_SALT: ${{ github.event.inputs.benchmark_mode == 'baseline' && github.run_id || 'default' }}
+
 jobs:
   build:
     if: github.repository == 'fardani235/molecule'
@@ -36,6 +39,7 @@ jobs:
         with:
           python-version: "3.11"
           ansible: "true"
+          salt: ${{ env.CACHE_SALT }}
 
       - name: Install build tooling
         run: |

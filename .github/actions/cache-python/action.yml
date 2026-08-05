@@ -16,6 +16,10 @@ inputs:
     description: Also cache ~/.cache/pre-commit
     required: false
     default: "true"
+  salt:
+    description: Extra string mixed into every cache key (for benchmarks)
+    required: false
+    default: default
 
 runs:
   using: composite
@@ -27,18 +31,18 @@ runs:
           ~/.cache/pip
           ~/.cache/uv
           .tox
-        key: py-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('pyproject.toml', 'tox.ini', '.pre-commit-config.yaml') }}
+        key: py-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('pyproject.toml', 'tox.ini', '.pre-commit-config.yaml') }}-${{ inputs.salt }}
         restore-keys: |
-          py-${{ runner.os }}-${{ inputs.python-version }}-
+          py-${{ runner.os }}-${{ inputs.python-version }}-${{ inputs.salt }}-
 
     - name: Cache pre-commit hooks
       if: inputs.pre-commit == 'true'
       uses: actions/cache@v4
       with:
         path: ~/.cache/pre-commit
-        key: pc-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+        key: pc-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}-${{ inputs.salt }}
         restore-keys: |
-          pc-${{ runner.os }}-
+          pc-${{ runner.os }}-${{ inputs.salt }}-
 
     - name: Cache Ansible collections and roles
       if: inputs.ansible == 'true'
@@ -47,6 +51,6 @@ runs:
         path: |
           ~/.ansible/collections
           ~/.ansible/roles
-        key: ansible-${{ runner.os }}-${{ hashFiles('community.molecule/galaxy.yml', 'community.molecule/requirements.yml', 'requirements.yml') }}
+        key: ansible-${{ runner.os }}-${{ hashFiles('community.molecule/galaxy.yml', 'community.molecule/requirements.yml', 'requirements.yml') }}-${{ inputs.salt }}
         restore-keys: |
-          ansible-${{ runner.os }}-
+          ansible-${{ runner.os }}-${{ inputs.salt }}-

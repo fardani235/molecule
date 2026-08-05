@@ -11,6 +11,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      benchmark_mode:
+        description: "Set to 'baseline' to force cache misses"
+        type: string
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -20,6 +25,7 @@ permissions: {}
 
 env:
   PYTHON_VERSION: "3.11"
+  CACHE_SALT: ${{ github.event.inputs.benchmark_mode == 'baseline' && github.run_id || 'default' }}
 
 jobs:
 
@@ -37,10 +43,12 @@ jobs:
       - uses: ./.github/actions/cache-python
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          salt: ${{ env.CACHE_SALT }}
       - uses: ./.github/actions/cache-scanners
         with:
           trivy: "false"
           semgrep: "true"
+          salt: ${{ env.CACHE_SALT }}
 
       - name: Install Bandit
         run: python3 -m pip install --user "bandit[toml]==1.8.*"
@@ -98,10 +106,12 @@ jobs:
       - uses: ./.github/actions/cache-python
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          salt: ${{ env.CACHE_SALT }}
       - uses: ./.github/actions/cache-scanners
         with:
           trivy: "true"
           semgrep: "false"
+          salt: ${{ env.CACHE_SALT }}
 
       - name: Run pip-audit
         uses: pypa/gh-action-pip-audit@v1
@@ -215,6 +225,7 @@ jobs:
           trivy: "false"
           semgrep: "false"
           kics: "true"
+          salt: ${{ env.CACHE_SALT }}
       - name: Run KICS
         uses: Checkmarx/kics-github-action@v2
         with:
@@ -258,6 +269,7 @@ jobs:
       - uses: ./.github/actions/cache-python
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          salt: ${{ env.CACHE_SALT }}
 
       - name: Install CycloneDX generator
         run: python3 -m pip install --user "cyclonedx-bom==5.*"

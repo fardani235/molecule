@@ -21,6 +21,10 @@ inputs:
     description: KICS version tag (used in the cache key)
     required: false
     default: "2.1.3"
+  salt:
+    description: Extra string mixed into every cache key (for benchmarks)
+    required: false
+    default: default
 
 runs:
   using: composite
@@ -30,24 +34,24 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/trivy
-        key: trivy-db-${{ github.run_id }}
+        key: trivy-db-${{ github.run_id }}-${{ inputs.salt }}
         restore-keys: |
-          trivy-db-
+          trivy-db-${{ inputs.salt }}-
 
     - name: Cache Semgrep rules
       if: inputs.semgrep == 'true'
       uses: actions/cache@v4
       with:
         path: ~/.semgrep
-        key: semgrep-${{ hashFiles('.github/security/semgrep-rules.yml') }}
+        key: semgrep-${{ hashFiles('.github/security/semgrep-rules.yml') }}-${{ inputs.salt }}
         restore-keys: |
-          semgrep-
+          semgrep-${{ inputs.salt }}-
 
     - name: Cache KICS queries
       if: inputs.kics == 'true'
       uses: actions/cache@v4
       with:
         path: ~/.cache/kics
-        key: kics-${{ inputs.kics-version }}
+        key: kics-${{ inputs.kics-version }}-${{ inputs.salt }}
         restore-keys: |
-          kics-
+          kics-${{ inputs.salt }}-

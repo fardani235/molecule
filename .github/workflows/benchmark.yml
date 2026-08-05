@@ -1,0 +1,89 @@
+---
+name: benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "baseline (no caches) or optimized (with caches)"
+        type: choice
+        options: [baseline, optimized]
+        default: optimized
+      runs:
+        description: "How many runs of security.yml to average"
+        type: number
+        default: 3
+
+permissions: {}
+
+jobs:
+  benchmark:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install script deps
+        run: python3 -m pip install --user -r .github/scripts/requirements.txt
+
+      - name: Dispatch N runs of security.yml and record run IDs
+        id: dispatch
+        run: |
+          set -euo pipefail
+          mkdir -p runs-json
+          RUNS_INPUT="${{ github.event.inputs.runs }}"
+          MODE="${{ github.event.inputs.mode }}"
+          run_ids=()
+          for i in $(seq 1 "$RUNS_INPUT"); do
+            echo "Dispatching run $i ($MODE) ..."
+            gh workflow run security.yml \
+              --ref "${{ github.ref_name }}" \
+              -f benchmark_mode="$MODE"
+            sleep 5
+            # Poll for the most recent run of security.yml on this ref
+            RID=$(gh run list --workflow=security.yml \
+              --branch "${{ github.ref_name }}" \
+              --limit 1 --json databaseId --jq '.[0].databaseId')
+            run_ids+=("$RID")
+            echo "  run id: $RID"
+            gh run watch "$RID" --exit-status || true
+          done
+          printf '%s\n' "${run_ids[@]}" > run_ids.txt
+          cat run_ids.txt
+
+      - name: Fetch per-run jobs JSON
+        run: |
+          mkdir -p ${{ github.event.inputs.mode }}
+          i=0
+          while read RID; do
+            i=$((i+1))
+            gh api "repos/${{ github.repository }}/actions/runs/${RID}/jobs?per_page=100" \
+              > "${{ github.event.inputs.mode }}/run-$i.json"
+          done < run_ids.txt
+
+      - name: Aggregate (only when both modes' data is present)
+        run: |
+          # If the counterpart mode's directory doesn't exist yet, create an empty JSON so render_md still works.
+          OTHER="$([ "${{ github.event.inputs.mode }}" = "baseline" ] && echo optimized || echo baseline)"
+          mkdir -p "$OTHER"
+          python3 .github/scripts/benchmark_collect.py \
+            --baseline baseline \
+            --optimized optimized \
+            --out-md ci-benchmark.md \
+            --out-json ci-benchmark.json
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: |
+            ci-benchmark.md
+            ci-benchmark.json
+          retention-days: 90
