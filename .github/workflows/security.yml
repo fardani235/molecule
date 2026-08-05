@@ -151,7 +151,7 @@ jobs:
       - name: Run Trivy fs (SARIF)
         # Trivy action tag format is `v<X.Y.Z>` — the plan's `0.24.0` doesn't
         # exist. Pinning to a real tag; Renovate will bump.
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -160,7 +160,7 @@ jobs:
           severity: MEDIUM,HIGH,CRITICAL
           ignorefile: .github/security/.trivyignore
       - name: Run Trivy fs (JSON)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
