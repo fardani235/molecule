@@ -1,0 +1,4 @@
+version: 1
+findings:
+  - id: 'bandit:B404'
+    # missing reason, owner, expires

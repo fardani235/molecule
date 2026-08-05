@@ -1,0 +1,22 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "gitleaks", "version": "8.19.0", "rules": [
+        {"id": "generic-api-key", "name": "leak", "shortDescription": {"text": "Generic API key pattern"}}
+      ]}},
+      "results": [
+        {
+          "ruleId": "generic-api-key",
+          "level": "note",
+          "message": {"text": "Match in test fixture"},
+          "locations": [{"physicalLocation": {
+            "artifactLocation": {"uri": "tests/fixtures/keys.txt"},
+            "region": {"startLine": 1}
+          }}]
+        }
+      ]
+    }
+  ]
+}
