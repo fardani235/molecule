@@ -674,3 +674,6 @@ constraint-dependencies = [
 ]
 default-groups = ["dev", "docs", "lint", "pkg"]
 package = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".tox", ".venv", "build", "dist"]
