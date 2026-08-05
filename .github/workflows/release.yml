@@ -43,6 +43,13 @@ jobs:
       - name: Build dists
         run: python3 -m tox -e pkg
 
+      - name: Upload built distributions as artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dists
+          path: dist/
+          retention-days: 90
+
       - name: Publish to pypi.org
         uses: pypa/gh-action-pypi-publish@release/v1
 
@@ -56,6 +63,13 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build the collection
         run: ansible-galaxy collection build -v --force community.molecule
+      - name: Upload built collection tarball as artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dists
+          path: "*.tar.gz"
+          retention-days: 90
+          overwrite: false
       - name: Publish the collection on Galaxy
         if: env.ANSIBLE_GALAXY_API_KEY != ''
         env:

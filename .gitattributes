@@ -1,0 +1,7 @@
+# Fork-only paths — prefer the fork's version when upstream merges.
+# Enable with: git config merge.ours.driver true
+.github/workflows/security.yml merge=ours
+.github/actions/security-setup/ merge=ours
+.security/ merge=ours
+docs/security/ merge=ours
+.github/dependabot.yml merge=ours

@@ -1,0 +1,12 @@
+# Checkov framework selection + skip patterns.
+framework:
+  - ansible
+  - dockerfile
+  - github_actions
+  - secrets
+skip-path:
+  - tests/fixtures/integration/test_command/molecule
+  - .venv
+compact: true
+quiet: true
+output: sarif

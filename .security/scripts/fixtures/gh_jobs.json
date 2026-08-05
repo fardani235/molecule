@@ -1,0 +1,11 @@
+{
+  "total_count": 3,
+  "jobs": [
+    {"name": "sast-bandit", "started_at": "2026-08-05T00:00:00Z", "completed_at": "2026-08-05T00:00:42Z",
+     "conclusion": "success"},
+    {"name": "sca-pip-audit", "started_at": "2026-08-05T00:00:00Z", "completed_at": "2026-08-05T00:01:10Z",
+     "conclusion": "success"},
+    {"name": "security-gate", "started_at": "2026-08-05T00:01:10Z", "completed_at": "2026-08-05T00:01:38Z",
+     "conclusion": "success"}
+  ]
+}
