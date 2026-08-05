@@ -442,8 +442,8 @@ jobs:
       - name: Collect SARIF into a single directory
         run: |
           set -euo pipefail
-          mkdir -p sarif-in
-          find downloaded-artifacts -type f -name '*.sarif' -exec cp -v {} sarif-in/ \;
+          mkdir -p sarif-in downloaded-artifacts
+          find downloaded-artifacts -type f -name '*.sarif' -exec cp -v {} sarif-in/ \; || true
           ls -la sarif-in
 
       - name: Aggregate + apply allowlist
