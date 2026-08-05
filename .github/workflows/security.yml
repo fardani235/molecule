@@ -187,7 +187,7 @@ jobs:
         run: pip install pip-audit
 
       - name: Install project dependencies
-        run: pip install .
+        run: pip install uv && uv pip install --system --locked .
 
       - name: Run pip-audit
         run: |

@@ -26,6 +26,8 @@ jobs:
     name: Warm dependency caches
     if: github.repository == 'fardani235/molecule'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
