@@ -1,0 +1,89 @@
+---
+name: build-artifacts
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  build-python:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # setuptools-scm needs tags
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install tox
+        run: uv tool install "tox>=4.46.0" --with tox-uv
+      - name: Build Python package
+        run: tox -e pkg
+      - name: Upload Python dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+          retention-days: 30
+
+  build-collection:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install ansible-core
+        run: python -m pip install --user "ansible-core>=2.15.0"
+      - name: Build collection
+        run: ansible-galaxy collection build -v --force community.molecule --output-path dist-collection
+      - name: Upload collection
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-collection
+          path: dist-collection/*.tar.gz
+          retention-days: 30
+
+  sbom:
+    if: github.repository == 'fardani235/molecule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Generate CycloneDX SBOM
+        run: |
+          uvx --from cyclonedx-bom cyclonedx-py poetry --help >/dev/null 2>&1 || true
+          uvx --from cyclonedx-bom cyclonedx-py requirements <(uv export --format requirements-txt --no-hashes) \
+            -o sbom-cyclonedx.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom-cyclonedx.json
+          retention-days: 30
