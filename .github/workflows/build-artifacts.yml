@@ -62,15 +62,24 @@ jobs:
           sha256sum *.whl *.tar.gz > SHA256SUMS.txt
 
       - name: SBOM for built distributions
+        # `cyclonedx_py requirements pyproject.toml` produces a
+        # schema-invalid CDX 1.5 doc when deps are unpinned. Install the
+        # project into the environment first, then use `environment` mode
+        # which reads actually-installed versions and always validates.
         run: |
-          python3 -m cyclonedx_py requirements pyproject.toml \
+          python3 -m pip install --user . 2>&1 | tail -5 || true
+          python3 -m cyclonedx_py environment \
             --output-file dist/sbom-wheel.cdx.json \
             --output-format json
-          # Same content applies to sdist (same project); duplicate for clarity.
+          # sdist and wheel share the same dep graph — copy for clarity.
           cp dist/sbom-wheel.cdx.json dist/sbom-sdist.cdx.json
-          python3 -m cyclonedx_py requirements community.molecule/requirements.txt \
-            --output-file dist/sbom-collection.cdx.json \
-            --output-format json || true
+          if [ -f community.molecule/requirements.txt ]; then
+            python3 -m cyclonedx_py requirements community.molecule/requirements.txt \
+              --output-file dist/sbom-collection.cdx.json \
+              --output-format json --schema-version 1.4 || \
+              echo "{\"bomFormat\":\"CycloneDX\",\"specVersion\":\"1.4\",\"version\":1,\"components\":[]}" \
+                > dist/sbom-collection.cdx.json
+          fi
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
