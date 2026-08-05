@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -38,11 +39,18 @@ jobs:
             bandit.sarif
             bandit.json
           retention-days: 30
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
   trivy-deps:
     if: github.repository == 'fardani235/molecule'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v7
       - name: Cache Trivy vulnerability DB
@@ -81,11 +89,18 @@ jobs:
             trivy-deps.sarif
             trivy-deps.json
           retention-days: 30
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-deps.sarif
+          category: trivy-deps
   gitleaks:
     if: github.repository == 'fardani235/molecule'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -109,11 +124,18 @@ jobs:
             gitleaks.sarif
             gitleaks.json
           retention-days: 30
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
   trivy-artifact:
     if: github.repository == 'fardani235/molecule'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -160,4 +182,41 @@ jobs:
           path: |
             trivy-artifact.sarif
             trivy-artifact.json
+          retention-days: 30
+      - name: Upload SARIF to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-artifact.sarif
+          category: trivy-artifact
+  security-gate:
+    if: github.repository == 'fardani235/molecule'
+    needs: [bandit, trivy-deps, gitleaks, trivy-artifact]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Download all scan reports
+        uses: actions/download-artifact@v4
+        with:
+          path: reports
+          merge-multiple: true
+      - name: Consolidate reports
+        run: |
+          mkdir -p gate-reports
+          find reports -type f -name '*.json' -exec cp {} gate-reports/ \;
+          find reports -type f -name '*.sarif' -exec cp {} gate-reports/ \;
+          ls -la gate-reports
+      - name: Evaluate security gate
+        run: python tools/security-gate.py gate-reports
+      - name: Upload consolidated security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: gate-reports/*
           retention-days: 30
