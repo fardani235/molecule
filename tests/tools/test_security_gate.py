@@ -42,14 +42,46 @@ def test_count_gitleaks(tmp_path):
 
 
 def test_evaluate_fails_on_high(tmp_path):
+    _write_clean_reports(tmp_path)
     (tmp_path / "bandit.json").write_text(json.dumps({"results": [{"issue_severity": "HIGH"}]}))
     failed, summary = sg.evaluate(tmp_path)
     assert failed is True
     assert "HIGH" in summary
 
 
-def test_evaluate_passes_when_clean(tmp_path):
+def _write_clean_reports(tmp_path):
     (tmp_path / "bandit.json").write_text(json.dumps({"results": []}))
+    (tmp_path / "trivy-deps.json").write_text(json.dumps({"Results": []}))
+    (tmp_path / "trivy-artifact.json").write_text(json.dumps({"Results": []}))
     (tmp_path / "gitleaks.json").write_text(json.dumps([]))
+
+
+def test_evaluate_passes_when_clean(tmp_path):
+    _write_clean_reports(tmp_path)
     failed, summary = sg.evaluate(tmp_path)
     assert failed is False
+
+
+def test_evaluate_fails_on_missing_reports(tmp_path):
+    # Empty dir: no report files at all -> gate must FAIL (false-PASS robustness gap).
+    failed, summary = sg.evaluate(tmp_path)
+    assert failed is True
+    assert "MISSING" in summary
+
+
+def test_evaluate_fails_on_single_missing_report(tmp_path):
+    # All present-and-clean except one missing report -> still FAIL.
+    _write_clean_reports(tmp_path)
+    (tmp_path / "gitleaks.json").unlink()
+    failed, summary = sg.evaluate(tmp_path)
+    assert failed is True
+    assert "MISSING" in summary
+
+
+def test_evaluate_fails_on_empty_report(tmp_path):
+    # A present-but-empty (parses to null) report is treated as MISSING -> FAIL.
+    _write_clean_reports(tmp_path)
+    (tmp_path / "bandit.json").write_text("")
+    failed, summary = sg.evaluate(tmp_path)
+    assert failed is True
+    assert "MISSING" in summary
